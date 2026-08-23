@@ -1,11 +1,8 @@
 import { betterAuth } from 'better-auth'
-import { pool } from '@/lib/db'
-import {
-  sendLoginAlert,
-  sendPasswordChangedEmail,
-  sendResetPasswordEmail,
-  sendWelcomeEmail,
-} from '@/lib/mail'
+import { eq } from 'drizzle-orm'
+import { db, pool } from '@/lib/db'
+import { user as userTable } from '@/lib/db/schema'
+import { sendLoginAlert, sendResetPasswordEmail, sendWelcomeEmail } from '@/lib/mail'
 
 export const auth = betterAuth({
   database: pool,
@@ -22,9 +19,7 @@ export const auth = betterAuth({
     autoSignIn: true,
     sendResetPassword: async ({ user, url }) => {
       const ok = await sendResetPasswordEmail(user.email, url)
-      if (!ok) {
-        console.info('[apex-bank] password reset link for', user.email, url)
-      }
+      if (!ok) console.info('[apex-bank] password reset link for', user.email, url)
     },
   },
   databaseHooks: {
@@ -39,10 +34,15 @@ export const auth = betterAuth({
       create: {
         after: async (session) => {
           try {
-            const { rows } = await pool.query('select email, name from "user" where id = $1 limit 1', [
-              session.userId,
-            ])
-            const row = rows[0] as { email?: string; name?: string } | undefined
+            const rows = await db
+              .select({
+                email: userTable.email,
+                name: userTable.name,
+              })
+              .from(userTable)
+              .where(eq(userTable.id, session.userId))
+              .limit(1)
+            const row = rows[0]
             if (row?.email) void sendLoginAlert(row.email, row.name)
           } catch (err) {
             console.error('[apex-bank] login mail', err)
@@ -53,16 +53,8 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
-      phone: {
-        type: 'string',
-        required: false,
-        input: true,
-      },
-      dateOfBirth: {
-        type: 'string',
-        required: false,
-        input: true,
-      },
+      phone: { type: 'string', required: false, input: true },
+      dateOfBirth: { type: 'string', required: false, input: true },
     },
   },
   trustedOrigins: [
