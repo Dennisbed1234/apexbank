@@ -1,20 +1,5 @@
-import nodemailer from 'nodemailer'
-
 const ADMIN_INBOX =
-  process.env.ADMIN_EMAIL || process.env.SMTP_USER || 'personalofficedesk@gmail.com'
-
-function transporter() {
-  const host = process.env.SMTP_HOST
-  const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASS
-  if (!host || !user || !pass) return null
-  return nodemailer.createTransport({
-    host,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_PORT || '587') === '465',
-    auth: { user, pass },
-  })
-}
+  process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'personalofficedesk@gmail.com'
 
 function wrap(title: string, body: string) {
   return `
@@ -29,20 +14,47 @@ function wrap(title: string, body: string) {
 }
 
 export async function sendMail(to: string, subject: string, html: string) {
-  const tx = transporter()
-  if (!tx) {
-    console.warn('[apex-bank] SMTP not configured', subject, to)
+  const apiKey = process.env.RESEND_API_KEY
+  const from =
+    process.env.EMAIL_FROM ||
+    process.env.RESEND_FROM ||
+    'Apex Bank <onboarding@resend.dev>'
+
+  // Always log so reset links are recoverable from Vercel logs
+  console.log('[apex-bank] mail', { to, subject, from })
+
+  if (!apiKey) {
+    console.warn(
+      '[apex-bank] RESEND_API_KEY not set — email not sent. Add it in Vercel env vars.'
+    )
     return false
   }
-  const from = process.env.EMAIL_FROM || process.env.SMTP_USER || ADMIN_INBOX
+
   try {
-    await tx.sendMail({
-      from: `"Apex Bank" <${from}>`,
-      to,
-      bcc: to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? ADMIN_INBOX : undefined,
-      subject,
-      html,
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        bcc:
+          to.toLowerCase() !== ADMIN_INBOX.toLowerCase()
+            ? [ADMIN_INBOX]
+            : undefined,
+        subject,
+        html,
+      }),
     })
+
+    if (!res.ok) {
+      const text = await res.text()
+      console.error('[apex-bank] Resend error', res.status, text)
+      return false
+    }
+
     return true
   } catch (err) {
     console.error('[apex-bank] sendMail', err)
@@ -73,6 +85,8 @@ export async function sendLoginAlert(to: string, name?: string | null) {
 }
 
 export async function sendResetPasswordEmail(to: string, url: string) {
+  // Always print the link so you can copy it from Vercel logs if email is not configured
+  console.log(`[apex-bank] password reset link for ${to}: ${url}`)
   return sendMail(
     to,
     'Reset your Apex Bank password',
@@ -89,6 +103,9 @@ export async function sendPasswordChangedEmail(to: string) {
   return sendMail(
     to,
     'Your Apex Bank password was changed',
-    wrap('Password updated', '<p>Your Apex Bank password was changed successfully. If this was not you, contact support immediately.</p>')
+    wrap(
+      'Password updated',
+      '<p>Your Apex Bank password was changed successfully. If this was not you, contact support immediately.</p>'
+    )
   )
 }
