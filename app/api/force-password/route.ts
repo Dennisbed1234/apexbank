@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 
 export async function GET() {
   try {
+    // @ts-expect-error better-auth internal context
     const ctx = await auth.$context
     const hashed = await ctx.password.hash('Yalateef1$')
 
