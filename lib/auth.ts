@@ -17,9 +17,19 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    // Always resolve successfully so Better Auth does not return an error
+    // to the client even if SMTP is not configured. The reset link is
+    // logged to the server console when email delivery fails.
     sendResetPassword: async ({ user, url }) => {
-      const ok = await sendResetPasswordEmail(user.email, url)
-      if (!ok) console.info('[apex-bank] password reset link for', user.email, url)
+      try {
+        const ok = await sendResetPasswordEmail(user.email, url)
+        if (!ok) {
+          console.info('[apex-bank] password reset link for', user.email, url)
+        }
+      } catch (err) {
+        console.error('[apex-bank] sendResetPassword failed', err)
+        console.info('[apex-bank] password reset link for', user.email, url)
+      }
     },
   },
   databaseHooks: {
@@ -75,6 +85,8 @@ export const auth = betterAuth({
             : []),
           ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
           ...(process.env.AUTH_URL ? [process.env.AUTH_URL] : []),
+          // Common production domains for this project
+          'https://nk-theta.vercel.app',
         ]
       : []),
   ],
