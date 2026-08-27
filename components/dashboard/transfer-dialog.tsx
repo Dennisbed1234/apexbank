@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { ArrowRightLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { transferFunds } from '@/app/actions/banking'
@@ -15,19 +16,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { formatCurrency, maskAccountNumber } from '@/lib/format'
 import type { BankAccount } from '@/lib/db/schema'
 
+function accountLabel(a: BankAccount) {
+  return `${a.name} ${maskAccountNumber(a.accountNumber)}`
+}
+
 export function TransferDialog({ accounts }: { accounts: BankAccount[] }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [fromId, setFromId] = useState<string>(String(accounts[0]?.id ?? ''))
   const [toId, setToId] = useState<string>(String(accounts[1]?.id ?? ''))
@@ -66,6 +64,7 @@ export function TransferDialog({ accounts }: { accounts: BankAccount[] }) {
       })
       resetForm()
       setOpen(false)
+      router.refresh()
     })
   }
 
@@ -96,39 +95,35 @@ export function TransferDialog({ accounts }: { accounts: BankAccount[] }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <FieldGroup>
             <Field>
-              <FieldLabel>From</FieldLabel>
-              <Select value={fromId} onValueChange={setFromId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        {a.name} · {maskAccountNumber(a.accountNumber)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <FieldLabel htmlFor="from-account">From</FieldLabel>
+              <select
+                id="from-account"
+                value={fromId}
+                onChange={(e) => setFromId(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {accountLabel(a)}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field>
-              <FieldLabel>To</FieldLabel>
-              <Select value={toId} onValueChange={setToId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        {a.name} · {maskAccountNumber(a.accountNumber)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <FieldLabel htmlFor="to-account">To</FieldLabel>
+              <select
+                id="to-account"
+                value={toId}
+                onChange={(e) => setToId(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {accountLabel(a)}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field>
