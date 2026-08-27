@@ -1,3 +1,5 @@
+import nodemailer from 'nodemailer'
+
 const ADMIN_INBOX =
   process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'personalofficedesk@gmail.com'
 
@@ -13,49 +15,80 @@ function wrap(title: string, body: string) {
   </div>`
 }
 
-export async function sendMail(to: string, subject: string, html: string) {
-  const apiKey = process.env.RESEND_API_KEY
-  const from =
+function fromAddress() {
+  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER
+  return (
     process.env.EMAIL_FROM ||
     process.env.RESEND_FROM ||
-    'Apex Bank <onboarding@resend.dev>'
+    (gmailUser ? `Apex Bank <${gmailUser}>` : 'Apex Bank <onboarding@resend.dev>')
+  )
+}
 
-  // Always log so reset links are recoverable from Vercel logs
-  console.log('[apex-bank] mail', { to, subject, from })
+async function sendViaGmail(to: string, subject: string, html: string) {
+  const user = process.env.GMAIL_USER || process.env.SMTP_USER
+  const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s/g, '')
+  if (!user || !pass) return false
 
-  if (!apiKey) {
-    console.warn(
-      '[apex-bank] RESEND_API_KEY not set — email not sent. Add it in Vercel env vars.'
-    )
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: String(process.env.SMTP_PORT || '465') === '465',
+    auth: { user, pass },
+  })
+
+  const bcc =
+    to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? [ADMIN_INBOX] : undefined
+
+  await transporter.sendMail({
+    from: fromAddress(),
+    to,
+    bcc,
+    subject,
+    html,
+  })
+  return true
+}
+
+async function sendViaResend(to: string, subject: string, html: string) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return false
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromAddress(),
+      to: [to],
+      bcc:
+        to.toLowerCase() !== ADMIN_INBOX.toLowerCase()
+          ? [ADMIN_INBOX]
+          : undefined,
+      subject,
+      html,
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('[apex-bank] Resend error', res.status, text)
     return false
   }
+  return true
+}
+
+export async function sendMail(to: string, subject: string, html: string) {
+  console.log('[apex-bank] mail', { to, subject, from: fromAddress() })
 
   try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        bcc:
-          to.toLowerCase() !== ADMIN_INBOX.toLowerCase()
-            ? [ADMIN_INBOX]
-            : undefined,
-        subject,
-        html,
-      }),
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      console.error('[apex-bank] Resend error', res.status, text)
-      return false
-    }
-
-    return true
+    if (await sendViaGmail(to, subject, html)) return true
+    if (await sendViaResend(to, subject, html)) return true
+    console.warn(
+      '[apex-bank] No mail transport. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY.'
+    )
+    return false
   } catch (err) {
     console.error('[apex-bank] sendMail', err)
     return false
@@ -85,7 +118,6 @@ export async function sendLoginAlert(to: string, name?: string | null) {
 }
 
 export async function sendResetPasswordEmail(to: string, url: string) {
-  // Always print the link so you can copy it from Vercel logs if email is not configured
   console.log(`[apex-bank] password reset link for ${to}: ${url}`)
   return sendMail(
     to,
