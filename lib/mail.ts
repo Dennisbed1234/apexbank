@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer'
+import { connect } from 'node:tls'
 
 const ADMIN_INBOX =
   process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'personalofficedesk@gmail.com'
@@ -24,28 +24,83 @@ function fromAddress() {
   )
 }
 
+function readLine(socket: NodeJS.ReadableStream) {
+  return new Promise<string>((resolve, reject) => {
+    const onData = (chunk: Buffer) => {
+      socket.off('error', onError)
+      resolve(chunk.toString('utf8'))
+    }
+    const onError = (err: Error) => {
+      socket.off('data', onData)
+      reject(err)
+    }
+    socket.once('data', onData)
+    socket.once('error', onError)
+  })
+}
+
+async function expectOk(socket: NodeJS.ReadableStream, command?: string) {
+  if (command) (socket as NodeJS.WritableStream).write(command + '\r\n')
+  const reply = await readLine(socket)
+  if (!/^[23]/.test(reply.trim())) {
+    throw new Error(`SMTP rejected: ${reply.trim()}`)
+  }
+  return reply
+}
+
 async function sendViaGmail(to: string, subject: string, html: string) {
   const user = process.env.GMAIL_USER || process.env.SMTP_USER
   const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s/g, '')
   if (!user || !pass) return false
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: String(process.env.SMTP_PORT || '465') === '465',
-    auth: { user, pass },
-  })
-
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com'
+  const port = Number(process.env.SMTP_PORT || 465)
+  const from = fromAddress()
   const bcc =
-    to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? [ADMIN_INBOX] : undefined
+    to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? ADMIN_INBOX : null
 
-  await transporter.sendMail({
-    from: fromAddress(),
-    to,
-    bcc,
-    subject,
-    html,
+  await new Promise<void>((resolve, reject) => {
+    const socket = connect({ host, port, servername: host }, async () => {
+      try {
+        await expectOk(socket)
+        await expectOk(socket, `EHLO apexbank`)
+        await expectOk(socket, 'AUTH LOGIN')
+        await expectOk(socket, Buffer.from(user).toString('base64'))
+        await expectOk(socket, Buffer.from(pass).toString('base64'))
+        await expectOk(socket, `MAIL FROM:<${user}>`)
+        await expectOk(socket, `RCPT TO:<${to}>`)
+        if (bcc) await expectOk(socket, `RCPT TO:<${bcc}>`)
+        await expectOk(socket, 'DATA')
+        const headers = [
+          `From: ${from}`,
+          `To: ${to}`,
+          bcc ? `Bcc: ${bcc}` : null,
+          `Subject: ${subject}`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/html; charset=UTF-8',
+          '',
+          html,
+          '.',
+        ]
+          .filter(Boolean)
+          .join('\r\n')
+        await expectOk(socket, headers)
+        socket.write('QUIT\r\n')
+        socket.end()
+        resolve()
+      } catch (err) {
+        socket.destroy()
+        reject(err)
+      }
+    })
+    socket.setEncoding('utf8')
+    socket.setTimeout(20000, () => {
+      socket.destroy()
+      reject(new Error('Gmail SMTP timed out'))
+    })
+    socket.on('error', reject)
   })
+
   return true
 }
 
