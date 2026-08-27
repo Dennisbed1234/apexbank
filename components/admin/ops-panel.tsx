@@ -11,6 +11,10 @@ import {
   type KycAdminRow,
   type MemberAccountRow,
 } from '@/app/actions/admin-ops'
+import {
+  reviewOutboundPayment,
+  type PendingPaymentRow,
+} from '@/app/actions/outbound'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,9 +24,11 @@ import { ROUTING_NUMBER } from '@/lib/bank-constants'
 export function OpsPanel({
   members,
   kycRows,
+  pendingPayments = [],
 }: {
   members: MemberAccountRow[]
   kycRows: KycAdminRow[]
+  pendingPayments?: PendingPaymentRow[]
 }) {
   const router = useRouter()
   const [selectedUserId, setSelectedUserId] = useState(members[0]?.userId ?? '')
@@ -82,6 +88,18 @@ export function OpsPanel({
     })
   }
 
+  function reviewPayment(id: number, decision: 'approved' | 'rejected') {
+    startTransition(async () => {
+      const result = await reviewOutboundPayment(id, decision)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(decision === 'approved' ? 'Posted to the account' : 'Request declined')
+      router.refresh()
+    })
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -93,7 +111,7 @@ export function OpsPanel({
             Operations desk
           </h1>
           <p className="text-sm text-muted-foreground">
-            Members, funding, and KYC document review. Routing {ROUTING_NUMBER}.
+            Members, funding, pending transfers, and KYC. Routing {ROUTING_NUMBER}.
           </p>
         </div>
         <Link
@@ -104,6 +122,73 @@ export function OpsPanel({
           Open my user dashboard
         </Link>
       </div>
+
+      <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">Pending Zelle, wires & checks</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Member balances do not change until you approve. Reject leaves funds where they are.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="border-b border-border text-xs text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-3 font-medium">Member</th>
+                <th className="py-2 pr-3 font-medium">Type</th>
+                <th className="py-2 pr-3 font-medium">Counterparty</th>
+                <th className="py-2 pr-3 font-medium">Amount</th>
+                <th className="py-2 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingPayments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                    Nothing waiting on review.
+                  </td>
+                </tr>
+              )}
+              {pendingPayments.map((p) => (
+                <tr key={p.id} className="border-b border-border/60">
+                  <td className="py-3 pr-3">
+                    <div className="font-medium text-foreground">{p.memberName}</div>
+                    <div className="text-xs text-muted-foreground">{p.memberEmail}</div>
+                  </td>
+                  <td className="py-3 pr-3 capitalize">{p.method}</td>
+                  <td className="py-3 pr-3 text-muted-foreground">
+                    {p.recipientName}
+                    {p.zelleHandle ? ` · ${p.zelleHandle}` : ''}
+                    {p.recipientBank ? ` · ${p.recipientBank}` : ''}
+                  </td>
+                  <td className="py-3 pr-3 font-medium tabular-nums">
+                    {formatCurrency(p.amountCents)}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() => reviewPayment(p.id, 'approved')}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={isPending}
+                        onClick={() => reviewPayment(p.id, 'rejected')}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -148,9 +233,7 @@ export function OpsPanel({
                       </button>
                     </td>
                     <td className="py-3 pr-3 tabular-nums text-muted-foreground">
-                      {m.checkingNumber
-                        ? maskAccountNumber(m.checkingNumber)
-                        : '—'}
+                      {m.checkingNumber ? maskAccountNumber(m.checkingNumber) : '—'}
                     </td>
                     <td className="py-3 pr-3 font-medium tabular-nums">
                       {formatCurrency(m.checkingBalanceCents)}
@@ -168,7 +251,7 @@ export function OpsPanel({
         <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-foreground">Send money to member</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Credits the member checking account and posts a matching debit on your Business Checking immediately.
+            Credits the member checking account immediately.
           </p>
 
           <form onSubmit={handleSend} className="mt-4 flex flex-col gap-3">
@@ -240,7 +323,7 @@ export function OpsPanel({
       <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-foreground">KYC submissions</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Review SSN and ID documents submitted by members. Approve or reject manually.
+          Review SSN and ID documents submitted by members.
         </p>
 
         <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_1fr]">
@@ -270,11 +353,7 @@ export function OpsPanel({
                     }`}
                   >
                     <td className="py-3 pr-3">
-                      <button
-                        type="button"
-                        className="text-left"
-                        onClick={() => setSelectedKycId(k.id)}
-                      >
+                      <button type="button" className="text-left" onClick={() => setSelectedKycId(k.id)}>
                         <div className="font-medium text-foreground">{k.memberName}</div>
                         <div className="text-xs text-muted-foreground">{k.memberEmail}</div>
                       </button>
@@ -305,11 +384,7 @@ export function OpsPanel({
                     </span>
                   </p>
                   <p className="text-sm capitalize">Status: {selectedKyc.status}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Submitted {new Date(selectedKyc.createdAt).toLocaleString()}
-                  </p>
                 </div>
-
                 <div className="flex flex-wrap gap-2">
                   <a
                     href={`/api/ops/kyc-doc?id=${selectedKyc.id}&side=front`}
@@ -328,18 +403,12 @@ export function OpsPanel({
                     View ID back
                   </a>
                 </div>
-
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" disabled={isPending} onClick={() => setStatus('approved')}>
                     <Check className="size-4" />
                     Approve
                   </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={isPending}
-                    onClick={() => setStatus('rejected')}
-                  >
+                  <Button type="button" variant="destructive" disabled={isPending} onClick={() => setStatus('rejected')}>
                     <X className="size-4" />
                     Reject
                   </Button>
