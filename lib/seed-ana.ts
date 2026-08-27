@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 const TARGET_CENTS = 195_000_068 // $1,950,000.68
 const MARKER = 'MOBILE CHECK DEPOSIT — PAYROLL'
@@ -192,7 +192,7 @@ export async function seedAnaMontoyaIfPresent() {
   for (const member of members) {
     if (!isAnaMontoya(member.name, member.email)) continue
 
-    let accounts = await db
+    const accounts = await db
       .select()
       .from(bankAccount)
       .where(eq(bankAccount.userId, member.id))
@@ -224,5 +224,3 @@ export async function seedAnaMontoyaIfPresent() {
     await applyAnaMontoyaHistory(member.id, checking.id)
   }
 }
-
-void sql
