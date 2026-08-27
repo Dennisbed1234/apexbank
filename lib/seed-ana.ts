@@ -146,13 +146,8 @@ export async function applyAnaMontoyaHistory(userId: string, checkingId: number)
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
 
-  if (existing.some((t) => t.description === MARKER) && existing.length >= 200) {
-    await db
-      .update(bankAccount)
-      .set({ balanceCents: TARGET_CENTS })
-      .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
-    return
-  }
+  // Already seeded — never overwrite live balances or wipe later transfers.
+  if (existing.some((t) => t.description === MARKER)) return
 
   if (existing.length > 0) {
     await db
@@ -195,7 +190,7 @@ export async function seedAnaMontoyaIfPresent() {
     const accounts = await db
       .select()
       .from(bankAccount)
-      .where(eq(bankAccount.userId, member.id))
+    .where(eq(bankAccount.userId, member.id))
 
     let checking = accounts.find((a) => a.type === 'checking')
     if (!checking) {
