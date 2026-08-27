@@ -2,12 +2,13 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { bankAccount, transaction } from '@/lib/db/schema'
+import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import { bankAccount, outboundPayment, transaction } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-export type DepositResult = { ok: true } | { ok: false; error: string }
+export type DepositResult = { ok: true; status: string } | { ok: false; error: string }
 
 export async function depositMobileCheck(input: {
   toAccountId: number
@@ -17,6 +18,7 @@ export async function depositMobileCheck(input: {
 }): Promise<DepositResult> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) return { ok: false, error: 'Unauthorized' }
+  await ensureUserProfileColumns()
 
   if (!input.hasFront || !input.hasBack) {
     return { ok: false, error: 'Photograph both the front and the back of the check.' }
@@ -45,21 +47,28 @@ export async function depositMobileCheck(input: {
     return { ok: false, error: 'Mobile deposits go to checking or savings only.' }
   }
 
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: Number(account.balanceCents) + amountCents })
-    .where(and(eq(bankAccount.id, account.id), eq(bankAccount.userId, session.user.id)))
+  await db.insert(outboundPayment).values({
+    userId: session.user.id,
+    fromAccountId: account.id,
+    method: 'check',
+    amountCents,
+    status: 'pending',
+    scheduledFor: new Date(),
+    recipientName: session.user.name || 'Member',
+    memo: 'Mobile check deposit',
+  })
 
   await db.insert(transaction).values({
     userId: session.user.id,
     accountId: account.id,
     amountCents,
-    type: 'credit',
-    description: 'Mobile check deposit',
-    category: 'Mobile deposit',
+    type: 'pending',
+    description: 'Mobile check deposit (pending review)',
+    category: 'Check deposit',
     counterparty: 'Check',
   })
 
   revalidatePath('/dashboard')
-  return { ok: true }
+  revalidatePath('/ops')
+  return { ok: true, status: 'pending' }
 }
