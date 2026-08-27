@@ -15,6 +15,13 @@ function methodLabel(method: string) {
   return 'Wire'
 }
 
+function statusLabel(status: string) {
+  if (status === 'pending' || status === 'scheduled') return 'Processing'
+  if (status === 'sent') return 'Completed'
+  if (status === 'cancelled') return 'Cancelled'
+  return status
+}
+
 export function ScheduledPayments({
   payments,
 }: {
@@ -40,8 +47,7 @@ export function ScheduledPayments({
                   {p.method === 'check' ? 'to your account' : `to ${p.recipientName}`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {p.status === 'pending' ? 'Pending admin review' : p.status} ·{' '}
-                  {formatDate(p.scheduledFor)}
+                  {statusLabel(p.status)} · {formatDate(p.scheduledFor)}
                   {p.zelleHandle ? ` · ${p.zelleHandle}` : ''}
                   {p.recipientBank ? ` · ${p.recipientBank}` : ''}
                 </p>
