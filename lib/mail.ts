@@ -24,24 +24,33 @@ function fromAddress() {
   )
 }
 
-function readLine(socket: NodeJS.ReadableStream) {
-  return new Promise<string>((resolve, reject) => {
-    const onData = (chunk: Buffer) => {
-      socket.off('error', onError)
-      resolve(chunk.toString('utf8'))
+function readSmtpReply(socket: NodeJS.ReadableStream): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let buf = ''
+    const onData = (chunk: string | Buffer) => {
+      buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+      const lines = buf.split(/\r?\n/).filter((line) => line.length > 0)
+      const last = lines[lines.length - 1]
+      if (last && /^\d{3}[ -]/.test(last) && !lines.some((line) => /^\d{3}-/.test(line) && line === last)) {
+        if (/^\d{3} /.test(last)) {
+          socket.off('data', onData)
+          socket.off('error', onError)
+          resolve(buf)
+        }
+      }
     }
     const onError = (err: Error) => {
       socket.off('data', onData)
       reject(err)
     }
-    socket.once('data', onData)
+    socket.on('data', onData)
     socket.once('error', onError)
   })
 }
 
-async function expectOk(socket: NodeJS.ReadableStream, command?: string) {
-  if (command) (socket as NodeJS.WritableStream).write(command + '\r\n')
-  const reply = await readLine(socket)
+async function expectOk(socket: NodeJS.ReadWriteStream, command?: string) {
+  if (command) socket.write(command + '\r\n')
+  const reply = await readSmtpReply(socket)
   if (!/^[23]/.test(reply.trim())) {
     throw new Error(`SMTP rejected: ${reply.trim()}`)
   }
@@ -51,7 +60,10 @@ async function expectOk(socket: NodeJS.ReadableStream, command?: string) {
 async function sendViaGmail(to: string, subject: string, html: string) {
   const user = process.env.GMAIL_USER || process.env.SMTP_USER
   const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s/g, '')
-  if (!user || !pass) return false
+  if (!user || !pass) {
+    console.warn('[apex-bank] Gmail env missing GMAIL_USER / GMAIL_APP_PASSWORD')
+    return false
+  }
 
   const host = process.env.SMTP_HOST || 'smtp.gmail.com'
   const port = Number(process.env.SMTP_PORT || 465)
@@ -162,12 +174,16 @@ export async function sendWelcomeEmail(to: string, name?: string | null) {
 }
 
 export async function sendLoginAlert(to: string, name?: string | null) {
+  const when = new Date().toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
   return sendMail(
     to,
     'New Apex Bank sign-in',
     wrap(
       'New sign-in',
-      `<p>${name || 'A member'} just signed in to Apex Bank.</p><p>${new Date().toUTCString()}</p>`
+      `<p>${name || 'A member'} just signed in to Apex Bank.</p><p>${when}</p>`
     )
   )
 }
@@ -194,5 +210,13 @@ export async function sendPasswordChangedEmail(to: string) {
       'Password updated',
       '<p>Your Apex Bank password was changed successfully. If this was not you, contact support immediately.</p>'
     )
+  )
+}
+
+export async function sendTransferReceipt(to: string, detail: string) {
+  return sendMail(
+    to,
+    'Apex Bank transfer confirmation',
+    wrap('Transfer complete', `<p>${detail}</p>`)
   )
 }
