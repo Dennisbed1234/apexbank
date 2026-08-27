@@ -11,6 +11,7 @@ import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { AccountCard } from '@/components/dashboard/account-card'
 import { TransferDialog } from '@/components/dashboard/transfer-dialog'
 import { SendExternal } from '@/components/dashboard/send-external'
+import { MobileDeposit } from '@/components/dashboard/mobile-deposit'
 import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { DebitCard } from '@/components/dashboard/debit-card'
@@ -88,6 +89,7 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap gap-2">
             {accounts.length >= 2 && <TransferDialog accounts={accounts} />}
             {accounts.length >= 1 && <SendExternal accounts={accounts} />}
+            {accounts.length >= 1 && <MobileDeposit accounts={accounts} />}
           </div>
         </div>
 
