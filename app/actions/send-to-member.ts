@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { ADMIN_EMAIL, SHARED_CHECKING_NUMBER } from '@/lib/bank-constants'
+import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
@@ -76,6 +77,8 @@ export async function adminSendToUser(input: {
     })
     targetChecking = created
   }
+
+  await ensureRetirementAccount({ userId: targetUserId })
 
   const targetUser = await db
     .select({ name: user.name, email: user.email })
