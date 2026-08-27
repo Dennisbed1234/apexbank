@@ -72,7 +72,7 @@ export const bankAccount = pgTable('bank_account', {
   id: serial('id').primaryKey(),
   userId: text('userId').notNull(),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'checking' | 'savings'
+  type: text('type').notNull(), // 'checking' | 'savings' | 'retirement'
   accountNumber: text('accountNumber').notNull(),
   balanceCents: bigint('balanceCents', { mode: 'number' })
     .notNull()
