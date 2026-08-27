@@ -63,7 +63,7 @@ export async function depositMobileCheck(input: {
     accountId: account.id,
     amountCents,
     type: 'pending',
-    description: 'Mobile check deposit (pending review)',
+    description: 'Mobile check deposit (processing)',
     category: 'Check deposit',
     counterparty: 'Check',
   })
