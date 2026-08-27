@@ -93,6 +93,24 @@ export const transaction = pgTable('transaction', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })
 
+export const outboundPayment = pgTable('outbound_payment', {
+  id: serial('id').primaryKey(),
+  userId: text('userId').notNull(),
+  fromAccountId: integer('fromAccountId').notNull(),
+  method: text('method').notNull(), // 'zelle' | 'wire'
+  amountCents: bigint('amountCents', { mode: 'number' }).notNull(),
+  status: text('status').notNull().default('scheduled'), // scheduled | sent | cancelled | failed
+  scheduledFor: timestamp('scheduledFor').notNull(),
+  recipientName: text('recipientName').notNull(),
+  recipientBank: text('recipientBank'),
+  routingNumber: text('routingNumber'),
+  accountNumber: text('accountNumber'),
+  zelleHandle: text('zelleHandle'),
+  memo: text('memo'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  processedAt: timestamp('processedAt'),
+})
+
 export const kycSubmission = pgTable('kyc_submission', {
   id: serial('id').primaryKey(),
   userId: text('userId').notNull(),
@@ -129,6 +147,7 @@ export const chatMessage = pgTable('chat_message', {
 
 export type BankAccount = typeof bankAccount.$inferSelect
 export type Transaction = typeof transaction.$inferSelect
+export type OutboundPayment = typeof outboundPayment.$inferSelect
 export type KycSubmission = typeof kycSubmission.$inferSelect
 export type ChatThread = typeof chatThread.$inferSelect
 export type ChatMessage = typeof chatMessage.$inferSelect
