@@ -107,8 +107,8 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
         setError(result.error)
         return
       }
-      toast.success('Check submitted for review', {
-        description: `${formatCurrency(Math.round(amountDollars * 100))} will post after approval.`,
+      toast.success('Check processing', {
+        description: `${formatCurrency(Math.round(amountDollars * 100))} is processing.`,
       })
       resetForm()
       setOpen(false)
@@ -136,7 +136,7 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
         <DialogHeader>
           <DialogTitle>Mobile check deposit</DialogTitle>
           <DialogDescription>
-            Photograph the front and back, then submit. An Apex banker must approve before funds are available. Limit $5,000 per check.
+            Photograph the front and back, then submit. The deposit shows as Processing until it posts. Limit $5,000 per check.
           </DialogDescription>
         </DialogHeader>
 
@@ -207,7 +207,7 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
 
           <DialogFooter>
             <Button type="submit" disabled={isPending} className="w-full">
-              {isPending ? 'Submitting…' : 'Submit for review'}
+              {isPending ? 'Processing…' : 'Submit deposit'}
             </Button>
           </DialogFooter>
         </form>
