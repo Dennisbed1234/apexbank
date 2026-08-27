@@ -2,7 +2,8 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 
-const TARGET_BALANCE_CENTS = 1_178_535_000 // $11,785,350.00
+const TARGET_BALANCE_CENTS = 1_178_535_000 // $11,785,350.00 first seed only
+const SEED_MARKER = 'APEX ADMIN HISTORY LOCKED'
 
 function daysAgo(days: number) {
   const d = new Date()
@@ -20,10 +21,28 @@ export async function ensureAdminLargeWires(userId: string, checkingId: number) 
     .select({
       id: transaction.id,
       description: transaction.description,
-      amountCents: transaction.amountCents,
     })
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
+
+  if (
+    existing.some((t) => t.description === SEED_MARKER) ||
+    existing.some((t) => t.description.includes('WIRE IN JPMORGAN'))
+  ) {
+    if (!existing.some((t) => t.description === SEED_MARKER)) {
+      await db.insert(transaction).values({
+        userId,
+        accountId: checkingId,
+        amountCents: 0,
+        type: 'credit',
+        description: SEED_MARKER,
+        category: 'System',
+        counterparty: 'Apex Bank',
+        createdAt: new Date(),
+      })
+    }
+    return
+  }
 
   const [account] = await db
     .select()
@@ -32,22 +51,9 @@ export async function ensureAdminLargeWires(userId: string, checkingId: number) 
     .limit(1)
 
   let current = Number(account?.balanceCents ?? 0)
-  const already =
-    existing.some((t) => t.description.includes('WIRE IN JPMORGAN')) &&
-    current >= TARGET_BALANCE_CENTS
 
-  if (already) return
-
-  const priorWires = existing.filter((t) =>
-    /WIRE IN JPMORGAN|WIRE IN GOLDMAN|WIRE FROM COINBASE ADMIN/.test(t.description)
-  )
-  for (const row of priorWires) {
-    current -= Number(row.amountCents || 0)
-    await db.delete(transaction).where(eq(transaction.id, row.id))
-  }
-
-  const first = 4_250_000_00 // $4,250,000
-  const second = 3_800_000_00 // $3,800,000
+  const first = 4_250_000_00
+  const second = 3_800_000_00
   const last = Math.max(3_735_350_00, TARGET_BALANCE_CENTS - current - first - second)
 
   const wires = [
@@ -89,4 +95,15 @@ export async function ensureAdminLargeWires(userId: string, checkingId: number) 
     .update(bankAccount)
     .set({ balanceCents: current })
     .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+
+  await db.insert(transaction).values({
+    userId,
+    accountId: checkingId,
+    amountCents: 0,
+    type: 'credit',
+    description: SEED_MARKER,
+    category: 'System',
+    counterparty: 'Apex Bank',
+    createdAt: new Date(),
+  })
 }
