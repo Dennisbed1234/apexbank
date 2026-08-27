@@ -54,13 +54,17 @@ export function ChatSupport() {
     const body = text.trim()
     if (!body) return
     startTransition(async () => {
-      const result = await sendUserChatMessage(body)
-      if (!result.ok) {
-        toast.error(result.error)
-        return
+      try {
+        const result = await sendUserChatMessage(body)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
+        setText('')
+        await refresh()
+      } catch {
+        toast.error('Could not send message. Please try again.')
       }
-      setText('')
-      await refresh()
     })
   }
 

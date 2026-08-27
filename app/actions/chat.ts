@@ -2,9 +2,10 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
 import { chatMessage, chatThread, user } from '@/lib/db/schema'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
@@ -37,6 +38,8 @@ export type ChatThreadView = {
 }
 
 async function getOrCreateUserThread(userId: string) {
+  await ensureUserProfileColumns()
+
   const existing = await db
     .select()
     .from(chatThread)
@@ -82,31 +85,41 @@ export async function getMyChat() {
 export async function sendUserChatMessage(
   body: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const sessionUser = await getSessionUser()
-  const text = body.trim()
-  if (!text) return { ok: false, error: 'Message cannot be empty.' }
-  if (text.length > 2000) return { ok: false, error: 'Message is too long.' }
+  try {
+    const sessionUser = await getSessionUser()
+    const text = body.trim()
+    if (!text) return { ok: false, error: 'Message cannot be empty.' }
+    if (text.length > 2000) return { ok: false, error: 'Message is too long.' }
 
-  const thread = await getOrCreateUserThread(sessionUser.id)
+    const thread = await getOrCreateUserThread(sessionUser.id)
 
-  await db.insert(chatMessage).values({
-    threadId: thread.id,
-    sender: 'user',
-    body: text,
-  })
+    await db.insert(chatMessage).values({
+      threadId: thread.id,
+      sender: 'user',
+      body: text,
+    })
 
-  await db
-    .update(chatThread)
-    .set({ updatedAt: new Date(), status: 'open' })
-    .where(eq(chatThread.id, thread.id))
+    await db
+      .update(chatThread)
+      .set({ updatedAt: new Date(), status: 'open' })
+      .where(eq(chatThread.id, thread.id))
 
-  revalidatePath('/ops')
-  return { ok: true }
+    revalidatePath('/ops')
+    return { ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : ''
+    if (message === 'Unauthorized') {
+      return { ok: false, error: 'Sign in to send a message.' }
+    }
+    console.error('[chat] sendUserChatMessage', err)
+    return { ok: false, error: 'Could not send message. Please try again.' }
+  }
 }
 
 export async function listChatThreadsForAdmin(): Promise<ChatThreadView[]> {
   const sessionUser = await getSessionUser()
   if (!isAdmin(sessionUser.email)) throw new Error('Admin access required')
+  await ensureUserProfileColumns()
 
   const threads = await db
     .select({
@@ -148,6 +161,7 @@ export async function listChatThreadsForAdmin(): Promise<ChatThreadView[]> {
 export async function getThreadMessagesForAdmin(threadId: number) {
   const sessionUser = await getSessionUser()
   if (!isAdmin(sessionUser.email)) throw new Error('Admin access required')
+  await ensureUserProfileColumns()
 
   const messages = await db
     .select()
@@ -167,31 +181,38 @@ export async function sendAdminChatReply(
   threadId: number,
   body: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const sessionUser = await getSessionUser()
-  if (!isAdmin(sessionUser.email)) return { ok: false, error: 'Admin only' }
+  try {
+    const sessionUser = await getSessionUser()
+    if (!isAdmin(sessionUser.email)) return { ok: false, error: 'Admin only' }
 
-  const text = body.trim()
-  if (!text) return { ok: false, error: 'Message cannot be empty.' }
+    const text = body.trim()
+    if (!text) return { ok: false, error: 'Message cannot be empty.' }
 
-  const thread = await db
-    .select()
-    .from(chatThread)
-    .where(eq(chatThread.id, threadId))
-    .limit(1)
+    await ensureUserProfileColumns()
 
-  if (!thread[0]) return { ok: false, error: 'Thread not found' }
+    const thread = await db
+      .select()
+      .from(chatThread)
+      .where(eq(chatThread.id, threadId))
+      .limit(1)
 
-  await db.insert(chatMessage).values({
-    threadId,
-    sender: 'admin',
-    body: text,
-  })
+    if (!thread[0]) return { ok: false, error: 'Thread not found' }
 
-  await db
-    .update(chatThread)
-    .set({ updatedAt: new Date(), status: 'open' })
-    .where(eq(chatThread.id, threadId))
+    await db.insert(chatMessage).values({
+      threadId,
+      sender: 'admin',
+      body: text,
+    })
 
-  revalidatePath('/ops')
-  return { ok: true }
+    await db
+      .update(chatThread)
+      .set({ updatedAt: new Date(), status: 'open' })
+      .where(eq(chatThread.id, threadId))
+
+    revalidatePath('/ops')
+    return { ok: true }
+  } catch (err) {
+    console.error('[chat] sendAdminChatReply', err)
+    return { ok: false, error: 'Could not send reply. Please try again.' }
+  }
 }
