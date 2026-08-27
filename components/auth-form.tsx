@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
+import { notifySuccessfulLogin } from '@/app/actions/notify'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -52,7 +53,7 @@ export function AuthForm({
           return
         }
         setSuccess(
-          'If an account exists for that email, a reset link has been generated. Check your email (and server logs in development).'
+          'If an account exists for that email, a reset link has been sent. Check inbox and spam.'
         )
         return
       }
@@ -128,12 +129,14 @@ export function AuthForm({
       }
 
       const { error } = await authClient.signIn.email({ email, password })
-      setLoading(false)
       if (error) {
+        setLoading(false)
         setError(error.message ?? 'Something went wrong. Please try again.')
         return
       }
 
+      await notifySuccessfulLogin().catch(() => undefined)
+      setLoading(false)
       router.push('/dashboard')
       router.refresh()
     } catch (err) {
@@ -167,7 +170,7 @@ export function AuthForm({
         </Link>
         <div className="max-w-sm">
           <p className="text-balance text-2xl font-semibold leading-snug">
-            &ldquo;Switching to Apex was the easiest financial decision I&apos;ve
+            &ldquo;Switching to Apex was the easiest financial decision I've
             ever made.&rdquo;
           </p>
           <p className="mt-4 text-sm text-sidebar-foreground/70">
@@ -336,7 +339,7 @@ export function AuthForm({
               </>
             ) : (
               <>
-                Don&apos;t have an account?{' '}
+                Don't have an account?{' '}
                 <Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">
                   Open one
                 </Link>
