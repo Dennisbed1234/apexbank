@@ -9,6 +9,10 @@ import {
   type MemberAccountRow,
 } from '@/app/actions/admin-ops'
 import {
+  listPendingPaymentsForAdmin,
+  type PendingPaymentRow,
+} from '@/app/actions/outbound'
+import {
   listChatThreadsForAdmin,
   type ChatThreadView,
 } from '@/app/actions/chat'
@@ -33,6 +37,7 @@ export default async function OpsPage() {
   let members: MemberAccountRow[] = []
   let kycRows: KycAdminRow[] = []
   let chatThreads: ChatThreadView[] = []
+  let pendingPayments: PendingPaymentRow[] = []
 
   try {
     members = await listMemberAccounts()
@@ -49,6 +54,11 @@ export default async function OpsPage() {
   } catch (err) {
     console.error('[ops] listChatThreadsForAdmin failed', err)
   }
+  try {
+    pendingPayments = await listPendingPaymentsForAdmin()
+  } catch (err) {
+    console.error('[ops] listPendingPaymentsForAdmin failed', err)
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -56,7 +66,11 @@ export default async function OpsPage() {
         name={session.user.name || 'Admin'}
         email={session.user.email || ADMIN_EMAIL}
       />
-      <OpsPanel members={members} kycRows={kycRows} />
+      <OpsPanel
+        members={members}
+        kycRows={kycRows}
+        pendingPayments={pendingPayments}
+      />
       <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
         <OpsChat threads={chatThreads} />
       </div>
