@@ -4,19 +4,24 @@ import {
   ShieldCheck,
   LineChart,
   CreditCard,
-  Globe,
+  Trees,
 } from 'lucide-react'
 
 const features = [
   {
     icon: Zap,
     title: 'Instant transfers',
-    body: 'Move money between accounts and to friends in real time — no waiting days for it to clear.',
+    body: 'Move money between checking, savings, and retirement in real time — no waiting days for it to clear.',
   },
   {
     icon: PiggyBank,
     title: 'High-yield savings',
     body: 'Earn 4.30% APY automatically. No minimums, no lock-ups, no surprises.',
+  },
+  {
+    icon: Trees,
+    title: 'Retirement accounts',
+    body: 'Open a Traditional IRA next to your everyday accounts. Contribute from checking or savings anytime.',
   },
   {
     icon: LineChart,
@@ -33,11 +38,6 @@ const features = [
     title: 'Bank-grade security',
     body: 'Your deposits are FDIC insured and protected with encryption and fraud monitoring.',
   },
-  {
-    icon: Globe,
-    title: 'No foreign fees',
-    body: 'Spend abroad at the real exchange rate with zero foreign transaction fees.',
-  },
 ]
 
 export function Features() {
@@ -46,7 +46,7 @@ export function Features() {
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-24">
         <div className="max-w-2xl">
           <h2 className="text-balance text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Everything you need, nothing you don&apos;t.
+            Everything you need, nothing you don't.
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Apex Bank brings your entire financial life into one place, with the
