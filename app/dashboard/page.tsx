@@ -22,6 +22,7 @@ import {
 } from '@/lib/bank-constants'
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
+import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -32,6 +33,9 @@ export default async function DashboardPage() {
   if (!session?.user) redirect('/sign-in')
 
   await ensureSeeded()
+  if (isAnaMontoya(session.user.name, session.user.email)) {
+    await seedAnaMontoyaIfPresent().catch(() => undefined)
+  }
   const email = String(session.user.email || '').trim().toLowerCase()
   await ensureRetirementAccount({
     userId: session.user.id,
