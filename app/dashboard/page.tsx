@@ -8,7 +8,12 @@ import { AccountCard } from '@/components/dashboard/account-card'
 import { TransferDialog } from '@/components/dashboard/transfer-dialog'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { DebitCard } from '@/components/dashboard/debit-card'
-import { SHARED_CHECKING_NUMBER } from '@/lib/bank-constants'
+import {
+  ADMIN_EMAIL,
+  DEMO_MEMBER_EMAIL,
+  SHARED_CHECKING_NUMBER,
+} from '@/lib/bank-constants'
+import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
 
 export const dynamic = 'force-dynamic'
@@ -20,6 +25,13 @@ export default async function DashboardPage() {
   if (!session?.user) redirect('/sign-in')
 
   await ensureSeeded()
+  const email = String(session.user.email || '').trim().toLowerCase()
+  await ensureRetirementAccount({
+    userId: session.user.id,
+    isAdmin: email === ADMIN_EMAIL,
+    isDemo: email === DEMO_MEMBER_EMAIL,
+  })
+
   const [accounts, transactions, profile] = await Promise.all([
     getAccounts(),
     getTransactions(250),
