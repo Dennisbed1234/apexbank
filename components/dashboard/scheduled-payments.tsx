@@ -15,13 +15,6 @@ function methodLabel(method: string) {
   return 'Wire'
 }
 
-function statusLabel(status: string) {
-  if (status === 'pending' || status === 'scheduled') return 'Processing'
-  if (status === 'sent') return 'Completed'
-  if (status === 'cancelled') return 'Cancelled'
-  return status
-}
-
 export function ScheduledPayments({
   payments,
 }: {
@@ -30,7 +23,10 @@ export function ScheduledPayments({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  if (payments.length === 0) return null
+  const open = payments.filter(
+    (p) => p.status === 'pending' || p.status === 'scheduled'
+  )
+  if (open.length === 0) return null
 
   return (
     <Card>
@@ -39,7 +35,7 @@ export function ScheduledPayments({
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col divide-y divide-border">
-          {payments.map((p) => (
+          {open.map((p) => (
             <li key={p.id} className="flex items-center gap-3 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">
@@ -47,7 +43,7 @@ export function ScheduledPayments({
                   {p.method === 'check' ? 'to your account' : `to ${p.recipientName}`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {statusLabel(p.status)} · {formatDate(p.scheduledFor)}
+                  Processing · {formatDate(p.scheduledFor)}
                   {p.zelleHandle ? ` · ${p.zelleHandle}` : ''}
                   {p.recipientBank ? ` · ${p.recipientBank}` : ''}
                 </p>
@@ -59,27 +55,25 @@ export function ScheduledPayments({
                     : -Math.abs(Number(p.amountCents))
                 )}
               </p>
-              {(p.status === 'scheduled' || p.status === 'pending') && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={isPending}
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await cancelScheduledWire(p.id)
-                      if (!result.ok) {
-                        toast.error(result.error)
-                        return
-                      }
-                      toast.success('Request cancelled')
-                      router.refresh()
-                    })
-                  }}
-                >
-                  Cancel
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isPending}
+                onClick={() => {
+                  startTransition(async () => {
+                    const result = await cancelScheduledWire(p.id)
+                    if (!result.ok) {
+                      toast.error(result.error)
+                      return
+                    }
+                    toast.success('Request cancelled')
+                    router.refresh()
+                  })
+                }}
+              >
+                Cancel
+              </Button>
             </li>
           ))}
         </ul>
