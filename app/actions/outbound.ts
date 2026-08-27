@@ -10,7 +10,7 @@ import {
   user,
 } from '@/lib/db/schema'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
@@ -59,23 +59,10 @@ function validZelleHandle(value: string) {
   return email || phone
 }
 
-async function insertPendingLedger(input: {
-  userId: string
-  accountId: number
-  amountCents: number
-  description: string
-  category: string
-  counterparty: string
-}) {
-  await db.insert(transaction).values({
-    userId: input.userId,
-    accountId: input.accountId,
-    amountCents: input.amountCents,
-    type: 'pending',
-    description: input.description,
-    category: input.category,
-    counterparty: input.counterparty,
-  })
+function paymentLabel(method: string, name: string, memo?: string | null) {
+  if (method === 'zelle') return memo ? `Zelle to ${name} — ${memo}` : `Zelle to ${name}`
+  if (method === 'check') return 'Mobile check deposit'
+  return memo ? `Wire to ${name} — ${memo}` : `Wire to ${name}`
 }
 
 export async function sendZelle(input: {
@@ -115,7 +102,7 @@ export async function sendZelle(input: {
   }
 
   const memo = input.memo?.trim()
-  const description = memo ? `Zelle to ${name} — ${memo}` : `Zelle to ${name}`
+  const description = paymentLabel('zelle', name, memo)
 
   await db.insert(outboundPayment).values({
     userId: sessionUser.id,
@@ -129,11 +116,12 @@ export async function sendZelle(input: {
     memo: memo || null,
   })
 
-  await insertPendingLedger({
+  await db.insert(transaction).values({
     userId: sessionUser.id,
     accountId: input.fromAccountId,
     amountCents: -amountCents,
-    description: `${description} (pending review)`,
+    type: 'pending',
+    description,
     category: 'Zelle',
     counterparty: `${name} (${handle})`,
   })
@@ -218,11 +206,12 @@ export async function scheduleWire(input: {
     memo: memo || null,
   })
 
-  await insertPendingLedger({
+  await db.insert(transaction).values({
     userId: sessionUser.id,
     accountId: input.fromAccountId,
     amountCents: -amountCents,
-    description: `${description} (pending review)`,
+    type: 'pending',
+    description,
     category: 'Wire',
     counterparty: `${name} · ${bank}`,
   })
@@ -233,7 +222,6 @@ export async function scheduleWire(input: {
 }
 
 export async function processDueWires() {
-  // External sends wait for admin review — do not auto-debit.
   return
 }
 
@@ -309,8 +297,25 @@ export async function reviewOutboundPayment(
 
   const amount = Number(payment.amountCents)
   const isCredit = payment.method === 'check'
+  const signedAmount = isCredit ? amount : -amount
+
+  const pendingMatches = await db
+    .select({ id: transaction.id })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, payment.userId),
+        eq(transaction.accountId, payment.fromAccountId),
+        eq(transaction.type, 'pending'),
+        eq(transaction.amountCents, signedAmount)
+      )
+    )
+    .limit(5)
 
   if (decision === 'rejected') {
+    for (const row of pendingMatches) {
+      await db.delete(transaction).where(eq(transaction.id, row.id))
+    }
     await db
       .update(outboundPayment)
       .set({ status: 'cancelled', processedAt: new Date() })
@@ -346,27 +351,36 @@ export async function reviewOutboundPayment(
     .set({ balanceCents: nextBalance })
     .where(and(eq(bankAccount.id, account.id), eq(bankAccount.userId, payment.userId)))
 
-  const label =
-    payment.method === 'zelle'
-      ? `Zelle to ${payment.recipientName}`
-      : payment.method === 'check'
-        ? 'Mobile check deposit'
-        : `Wire to ${payment.recipientName}`
+  const label = paymentLabel(payment.method, payment.recipientName, payment.memo)
 
-  await db.insert(transaction).values({
-    userId: payment.userId,
-    accountId: account.id,
-    amountCents: isCredit ? amount : -amount,
-    type: isCredit ? 'credit' : 'debit',
-    description: label,
-    category:
-      payment.method === 'zelle'
-        ? 'Zelle'
-        : payment.method === 'check'
-          ? 'Check deposit'
-          : 'Wire',
-    counterparty: payment.recipientName,
-  })
+  if (pendingMatches[0]) {
+    await db
+      .update(transaction)
+      .set({
+        type: isCredit ? 'credit' : 'debit',
+        description: label,
+        amountCents: signedAmount,
+      })
+      .where(eq(transaction.id, pendingMatches[0].id))
+    for (const extra of pendingMatches.slice(1)) {
+      await db.delete(transaction).where(eq(transaction.id, extra.id))
+    }
+  } else {
+    await db.insert(transaction).values({
+      userId: payment.userId,
+      accountId: account.id,
+      amountCents: signedAmount,
+      type: isCredit ? 'credit' : 'debit',
+      description: label,
+      category:
+        payment.method === 'zelle'
+          ? 'Zelle'
+          : payment.method === 'check'
+            ? 'Check deposit'
+            : 'Wire',
+      counterparty: payment.recipientName,
+    })
+  }
 
   await db
     .update(outboundPayment)
@@ -391,6 +405,23 @@ export async function cancelScheduledWire(id: number): Promise<OutboundResult> {
   if (!payment) return { ok: false, error: 'Payment not found.' }
   if (payment.status !== 'pending' && payment.status !== 'scheduled') {
     return { ok: false, error: 'Only pending items can be cancelled.' }
+  }
+
+  const signedAmount = payment.method === 'check' ? Number(payment.amountCents) : -Number(payment.amountCents)
+  const pendingMatches = await db
+    .select({ id: transaction.id })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, sessionUser.id),
+        eq(transaction.accountId, payment.fromAccountId),
+        eq(transaction.type, 'pending'),
+        eq(transaction.amountCents, signedAmount)
+      )
+    )
+    .limit(5)
+  for (const row of pendingMatches) {
+    await db.delete(transaction).where(eq(transaction.id, row.id))
   }
 
   await db
