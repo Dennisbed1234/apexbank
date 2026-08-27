@@ -62,13 +62,13 @@ export default async function DashboardPage() {
               Welcome back, {firstName}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Here&apos;s what&apos;s happening with your money.
+              Here's what's happening with your money.
             </p>
           </div>
           {accounts.length >= 2 && <TransferDialog accounts={accounts} />}
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {accounts.map((account) => (
             <AccountCard key={account.id} account={account} />
           ))}
