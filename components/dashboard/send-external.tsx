@@ -84,8 +84,8 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
         return
       }
 
-      toast.success(mode === 'zelle' ? 'Zelle submitted' : 'Wire submitted', {
-        description: `${formatCurrency(Math.round(amountDollars * 100))} is pending admin review.`,
+      toast.success(mode === 'zelle' ? 'Zelle processing' : 'Wire processing', {
+        description: `${formatCurrency(Math.round(amountDollars * 100))} is processing.`,
       })
       resetForm()
       setOpen(false)
@@ -113,7 +113,7 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
         <DialogHeader>
           <DialogTitle>Send outside Apex</DialogTitle>
           <DialogDescription>
-            Zelle and wires stay pending until an Apex banker approves them. Your available balance does not change until then.
+            Zelle and wires show as Processing until they complete. Available balance updates when the transfer finishes.
           </DialogDescription>
         </DialogHeader>
 
@@ -270,7 +270,7 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
                 mode === 'zelle' ? 'bg-[#6C1CD3] text-white hover:bg-[#5a16b3]' : ''
               }`}
             >
-              {isPending ? 'Submitting…' : mode === 'zelle' ? 'Submit Zelle®' : 'Submit wire'}
+              {isPending ? 'Processing…' : mode === 'zelle' ? 'Send with Zelle®' : 'Send wire'}
             </Button>
           </DialogFooter>
         </form>
