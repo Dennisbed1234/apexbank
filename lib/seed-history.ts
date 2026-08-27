@@ -13,7 +13,8 @@ function minutesAgo(minutes: number) {
   return new Date(Date.now() - minutes * 60 * 1000)
 }
 
-const TARGET_BALANCE_CENTS = 70_000_000 // $700,000.00
+const TARGET_BALANCE_CENTS = 70_000_000 // $700,000.00 first seed only
+const SEED_MARKER = 'APEX DEMO HISTORY LOCKED'
 
 const GROCERY = [
   'WALMART',
@@ -24,12 +25,12 @@ const GROCERY = [
   'H-E-B',
   'ALBERTSONS',
   'SAFEWAY',
-  'TRADER JOE\'S',
+  "TRADER JOE'S",
   'WHOLEFDS',
   'ALDI',
   'MEIJER',
   'WEGMANS',
-  'SAM\'S CLUB',
+  "SAM'S CLUB",
   'FOOD LION',
   'STOP & SHOP',
 ]
@@ -49,11 +50,11 @@ const GAS = [
 
 const DINING = [
   'STARBUCKS',
-  'MCDONALD\'S',
+  "MCDONALD'S",
   'CHIPOTLE',
   'CHICK-FIL-A',
   'PANERA BREAD',
-  'DUNKIN\'',
+  "DUNKIN'",
   'TACO BELL',
   'SUBWAY',
   'UBER EATS',
@@ -67,7 +68,7 @@ const RETAIL = [
   'WALGREENS',
   'CVS/PHARMACY',
   'HOME DEPOT',
-  'LOWE\'S',
+  "LOWE'S",
   'BEST BUY',
   'NIKE',
   'ULTA BEAUTY',
@@ -228,15 +229,29 @@ export function buildTwoYearPersonalHistory(): SeedTx[] {
   return rows
 }
 
+async function markSeeded(userId: string, checkingId: number) {
+  await db.insert(transaction).values({
+    userId,
+    accountId: checkingId,
+    amountCents: 0,
+    type: 'credit',
+    description: SEED_MARKER,
+    category: 'System',
+    counterparty: 'Apex Bank',
+    createdAt: new Date(),
+  })
+}
+
 async function ensureLargeWires(userId: string, checkingId: number) {
   const existing = await db
     .select({
       id: transaction.id,
       description: transaction.description,
-      amountCents: transaction.amountCents,
     })
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
+
+  if (existing.some((t) => t.description.includes('WIRE FROM COINBASE'))) return
 
   const [account] = await db
     .select()
@@ -245,16 +260,6 @@ async function ensureLargeWires(userId: string, checkingId: number) {
     .limit(1)
 
   let current = Number(account?.balanceCents ?? 0)
-  const alreadyWired = existing.some((t) => t.description.includes('WIRE FROM COINBASE'))
-  if (alreadyWired && current >= TARGET_BALANCE_CENTS - 100) return
-
-  const wireRows = existing.filter((t) =>
-    /WIRE FROM COINBASE|INCOMING WIRE|WIRE IN /.test(t.description)
-  )
-  for (const row of wireRows) {
-    current -= Number(row.amountCents || 0)
-    await db.delete(transaction).where(eq(transaction.id, row.id))
-  }
 
   const older = [
     {
@@ -322,50 +327,46 @@ export async function applyTwoYearPersonalHistory(
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
 
-  const messy =
-    existingTx.some(
-      (t) =>
-        t.description.includes('#') ||
-        t.description.includes('Purchase') ||
-        t.description.includes('Groceries') ||
-        t.description.includes('Fuel') ||
-        t.description.includes('Dining')
-    )
+  if (existingTx.some((t) => t.description === SEED_MARKER)) return
 
-  if (existingTx.length < 4000 || messy) {
-    if (existingTx.length > 0) {
-      await db
-        .delete(transaction)
-        .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
-    }
-
-    const history = buildTwoYearPersonalHistory()
-    let checkingBalance = 0
-    const BATCH = 250
-
-    for (let i = 0; i < history.length; i += BATCH) {
-      const slice = history.slice(i, i + BATCH)
-      const values = slice.map((t) => {
-        checkingBalance += t.amountCents
-        return {
-          userId,
-          accountId: checkingId,
-          amountCents: t.amountCents,
-          type: t.amountCents >= 0 ? 'credit' : 'debit',
-          description: t.description,
-          category: t.category,
-          counterparty: t.counterparty,
-          createdAt: t.createdAt,
-        }
-      })
-      await db.insert(transaction).values(values)
-    }
-
-    await db
-      .update(bankAccount)
-      .set({ balanceCents: checkingBalance })
-      .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+  if (existingTx.some((t) => t.description.includes('WIRE FROM COINBASE')) && existingTx.length >= 200) {
+    await markSeeded(userId, checkingId)
+    return
   }
 
+  if (existingTx.length > 0) {
+    await db
+      .delete(transaction)
+      .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
+  }
+
+  const history = buildTwoYearPersonalHistory()
+  let checkingBalance = 0
+  const BATCH = 250
+
+  for (let i = 0; i < history.length; i += BATCH) {
+    const slice = history.slice(i, i + BATCH)
+    const values = slice.map((t) => {
+      checkingBalance += t.amountCents
+      return {
+        userId,
+        accountId: checkingId,
+        amountCents: t.amountCents,
+        type: t.amountCents >= 0 ? 'credit' : 'debit',
+        description: t.description,
+        category: t.category,
+        counterparty: t.counterparty,
+        createdAt: t.createdAt,
+      }
+    })
+    await db.insert(transaction).values(values)
+  }
+
+  await db
+    .update(bankAccount)
+    .set({ balanceCents: checkingBalance })
+    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+
   await ensureLargeWires(userId, checkingId)
+  await markSeeded(userId, checkingId)
 }
