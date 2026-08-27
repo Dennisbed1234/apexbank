@@ -15,6 +15,7 @@ import {
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { OpsPanel } from '@/components/admin/ops-panel'
 import { OpsChat } from '@/components/admin/ops-chat'
+import { seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,10 @@ export default async function OpsPage() {
 
   const email = String(session.user.email || '').trim().toLowerCase()
   if (email !== ADMIN_EMAIL) redirect('/dashboard')
+
+  await seedAnaMontoyaIfPresent().catch((err) =>
+    console.error('[ops] seed Ana Montoya failed', err)
+  )
 
   let members: MemberAccountRow[] = []
   let kycRows: KycAdminRow[] = []
