@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Camera, CheckCircle2, Landmark } from 'lucide-react'
 import { toast } from 'sonner'
 import { depositMobileCheck } from '@/app/actions/deposit-check'
@@ -15,14 +16,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { formatCurrency, maskAccountNumber } from '@/lib/format'
 import type { BankAccount } from '@/lib/db/schema'
@@ -67,6 +60,7 @@ function PhotoSlot({
 }
 
 export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
+  const router = useRouter()
   const dest = accounts.filter((a) => a.type !== 'retirement')
   const destinations = dest.length ? dest : accounts
   const [open, setOpen] = useState(false)
@@ -113,11 +107,12 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
         setError(result.error)
         return
       }
-      toast.success('Check submitted', {
-        description: `${formatCurrency(Math.round(amountDollars * 100))} posted to your account.`,
+      toast.success('Check submitted for review', {
+        description: `${formatCurrency(Math.round(amountDollars * 100))} will post after approval.`,
       })
       resetForm()
       setOpen(false)
+      router.refresh()
     })
   }
 
@@ -141,7 +136,7 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
         <DialogHeader>
           <DialogTitle>Mobile check deposit</DialogTitle>
           <DialogDescription>
-            Photograph the front and back, then submit. Limit $5,000 per check.
+            Photograph the front and back, then submit. An Apex banker must approve before funds are available. Limit $5,000 per check.
           </DialogDescription>
         </DialogHeader>
 
@@ -164,21 +159,19 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <FieldGroup>
             <Field>
-              <FieldLabel>Deposit to</FieldLabel>
-              <Select value={toId} onValueChange={setToId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {destinations.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        {a.name} · {maskAccountNumber(a.accountNumber)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <FieldLabel htmlFor="chk-to">Deposit to</FieldLabel>
+              <select
+                id="chk-to"
+                value={toId}
+                onChange={(e) => setToId(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                {destinations.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {a.name} {maskAccountNumber(a.accountNumber)}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field>
               <FieldLabel htmlFor="chk-amt">Amount on check</FieldLabel>
@@ -197,18 +190,8 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
           </FieldGroup>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <PhotoSlot
-              label="Front of check"
-              preview={front}
-              inputRef={frontRef}
-              onChange={(file) => readFile(file, setFront)}
-            />
-            <PhotoSlot
-              label="Back of check"
-              preview={back}
-              inputRef={backRef}
-              onChange={(file) => readFile(file, setBack)}
-            />
+            <PhotoSlot label="Front of check" preview={front} inputRef={frontRef} onChange={(file) => readFile(file, setFront)} />
+            <PhotoSlot label="Back of check" preview={back} inputRef={backRef} onChange={(file) => readFile(file, setBack)} />
           </div>
 
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -224,7 +207,7 @@ export function MobileDeposit({ accounts }: { accounts: BankAccount[] }) {
 
           <DialogFooter>
             <Button type="submit" disabled={isPending} className="w-full">
-              {isPending ? 'Submitting…' : 'Submit deposit'}
+              {isPending ? 'Submitting…' : 'Submit for review'}
             </Button>
           </DialogFooter>
         </form>
