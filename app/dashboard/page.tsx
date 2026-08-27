@@ -28,6 +28,17 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const maxDuration = 60
 
+function activityKey(description: string, amountCents: number, createdAt: string) {
+  const day = createdAt.slice(0, 10)
+  const base = description
+    .replace(/\s+[\u2014\-]\s+.*$/, '')
+    .replace(/\s+\(pending review\)$/i, '')
+    .replace(/\s+\(processing\)$/i, '')
+    .trim()
+    .toLowerCase()
+  return `${base}|${amountCents}|${day}`
+}
+
 export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/sign-in')
@@ -63,18 +74,32 @@ export default async function DashboardPage() {
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const visa = issueVisaCard(session.user.id)
 
-  const rows = transactions.map((t) => ({
-    id: t.id,
-    accountId: t.accountId,
-    amountCents: t.amountCents,
-    type: t.type,
-    description: t.description,
-    category: t.category,
-    counterparty: t.counterparty,
-    createdAt:
-      t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
-    accountName: accountNameById.get(t.accountId) ?? 'Account',
-  }))
+  const seen = new Set<string>()
+  const rows = transactions
+    .filter((t) => {
+      const desc = String(t.description || '')
+      if (desc.includes('HISTORY LOCKED')) return false
+      if (t.amountCents === 0) return false
+      return true
+    })
+    .map((t) => ({
+      id: t.id,
+      accountId: t.accountId,
+      amountCents: t.amountCents,
+      type: t.type,
+      description: t.description,
+      category: t.category,
+      counterparty: t.counterparty,
+      createdAt:
+        t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
+      accountName: accountNameById.get(t.accountId) ?? 'Account',
+    }))
+    .filter((t) => {
+      const key = activityKey(t.description, t.amountCents, t.createdAt)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 
   return (
     <div className="min-h-svh bg-background">
