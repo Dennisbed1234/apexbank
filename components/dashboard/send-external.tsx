@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Banknote } from 'lucide-react'
 import { toast } from 'sonner'
 import { scheduleWire, sendZelle } from '@/app/actions/outbound'
@@ -16,14 +17,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { formatCurrency, maskAccountNumber } from '@/lib/format'
 import type { BankAccount } from '@/lib/db/schema'
@@ -31,6 +24,7 @@ import type { BankAccount } from '@/lib/db/schema'
 type Mode = 'zelle' | 'wire'
 
 export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
+  const router = useRouter()
   const spendable = accounts.filter((a) => a.type !== 'retirement')
   const sourceAccounts = spendable.length ? spendable : accounts
   const [open, setOpen] = useState(false)
@@ -90,17 +84,12 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
         return
       }
 
-      if (result.status === 'scheduled') {
-        toast.success('Wire scheduled', {
-          description: `${formatCurrency(Math.round(amountDollars * 100))} will leave on the date you chose.`,
-        })
-      } else {
-        toast.success(mode === 'zelle' ? 'Zelle sent' : 'Wire sent', {
-          description: `${formatCurrency(Math.round(amountDollars * 100))} is on the way to ${recipientName}.`,
-        })
-      }
+      toast.success(mode === 'zelle' ? 'Zelle submitted' : 'Wire submitted', {
+        description: `${formatCurrency(Math.round(amountDollars * 100))} is pending admin review.`,
+      })
       resetForm()
       setOpen(false)
+      router.refresh()
     })
   }
 
@@ -124,7 +113,7 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
         <DialogHeader>
           <DialogTitle>Send outside Apex</DialogTitle>
           <DialogDescription>
-            Zelle posts immediately. Wires can send today or on a future date.
+            Zelle and wires stay pending until an Apex banker approves them. Your available balance does not change until then.
           </DialogDescription>
         </DialogHeader>
 
@@ -157,22 +146,19 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <FieldGroup>
             <Field>
-              <FieldLabel>From</FieldLabel>
-              <Select value={fromId} onValueChange={setFromId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {sourceAccounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        {a.name} · {maskAccountNumber(a.accountNumber)} ·{' '}
-                        {formatCurrency(a.balanceCents)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <FieldLabel htmlFor="ext-from">From</FieldLabel>
+              <select
+                id="ext-from"
+                value={fromId}
+                onChange={(e) => setFromId(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                {sourceAccounts.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {a.name} {maskAccountNumber(a.accountNumber)} · {formatCurrency(a.balanceCents)}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field>
@@ -248,16 +234,13 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="ext-date">Send on (optional)</FieldLabel>
+                  <FieldLabel htmlFor="ext-date">Requested send date (optional)</FieldLabel>
                   <Input
                     id="ext-date"
                     type="date"
                     value={sendOn}
                     onChange={(e) => setSendOn(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Leave blank to send today. Future dates stay scheduled until that morning.
-                  </p>
                 </Field>
               </>
             )}
@@ -287,13 +270,7 @@ export function SendExternal({ accounts }: { accounts: BankAccount[] }) {
                 mode === 'zelle' ? 'bg-[#6C1CD3] text-white hover:bg-[#5a16b3]' : ''
               }`}
             >
-              {isPending
-                ? 'Sending…'
-                : mode === 'zelle'
-                  ? 'Send with Zelle®'
-                  : sendOn
-                    ? 'Schedule wire'
-                    : 'Send wire today'}
+              {isPending ? 'Submitting…' : mode === 'zelle' ? 'Submit Zelle®' : 'Submit wire'}
             </Button>
           </DialogFooter>
         </form>
