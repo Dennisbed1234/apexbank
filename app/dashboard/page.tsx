@@ -2,10 +2,16 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { ensureSeeded, getAccounts, getTransactions } from '@/app/actions/banking'
+import {
+  listOutboundPayments,
+  processDueWires,
+} from '@/app/actions/outbound'
 import { getProfileSettings } from '@/app/actions/settings'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { AccountCard } from '@/components/dashboard/account-card'
 import { TransferDialog } from '@/components/dashboard/transfer-dialog'
+import { SendExternal } from '@/components/dashboard/send-external'
+import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { DebitCard } from '@/components/dashboard/debit-card'
 import {
@@ -31,10 +37,12 @@ export default async function DashboardPage() {
     isAdmin: email === ADMIN_EMAIL,
     isDemo: email === DEMO_MEMBER_EMAIL,
   })
+  await processDueWires().catch(() => undefined)
 
-  const [accounts, transactions, profile] = await Promise.all([
+  const [accounts, transactions, outbound, profile] = await Promise.all([
     getAccounts(),
     getTransactions(250),
+    listOutboundPayments().catch(() => []),
     getProfileSettings().catch(() => ({
       name: session.user.name || 'Member',
       email: session.user.email || '',
@@ -68,7 +76,7 @@ export default async function DashboardPage() {
       <DashboardHeader name={session.user.name} email={session.user.email} />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
               Welcome back, {firstName}
@@ -77,7 +85,10 @@ export default async function DashboardPage() {
               Here's what's happening with your money.
             </p>
           </div>
-          {accounts.length >= 2 && <TransferDialog accounts={accounts} />}
+          <div className="flex flex-wrap gap-2">
+            {accounts.length >= 2 && <TransferDialog accounts={accounts} />}
+            {accounts.length >= 1 && <SendExternal accounts={accounts} />}
+          </div>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -95,6 +106,10 @@ export default async function DashboardPage() {
             cardCvv={visa.cvv}
             kycStatus={profile.kyc?.status ?? null}
           />
+        </div>
+
+        <div className="mt-8">
+          <ScheduledPayments payments={outbound} />
         </div>
 
         <div className="mt-8">
