@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Eye, EyeOff, Landmark, PiggyBank } from 'lucide-react'
+import { Check, Copy, Eye, EyeOff, Landmark, PiggyBank, Trees } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,7 @@ function CopyField({
 export function AccountCard({ account }: { account: BankAccount }) {
   const [revealed, setRevealed] = useState(false)
   const isSavings = account.type === 'savings'
+  const isRetirement = account.type === 'retirement'
 
   return (
     <Card className="relative overflow-hidden">
@@ -58,12 +59,16 @@ export function AccountCard({ account }: { account: BankAccount }) {
         <div className="flex items-center gap-3">
           <div
             className={
-              isSavings
-                ? 'flex size-10 items-center justify-center rounded-xl bg-accent/20 text-accent-foreground'
-                : 'flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary'
+              isRetirement
+                ? 'flex size-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                : isSavings
+                  ? 'flex size-10 items-center justify-center rounded-xl bg-accent/20 text-accent-foreground'
+                  : 'flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary'
             }
           >
-            {isSavings ? (
+            {isRetirement ? (
+              <Trees className="size-5" />
+            ) : isSavings ? (
               <PiggyBank className="size-5" />
             ) : (
               <Landmark className="size-5" />
@@ -83,7 +88,9 @@ export function AccountCard({ account }: { account: BankAccount }) {
         </Badge>
       </CardHeader>
       <CardContent>
-        <p className="text-xs text-muted-foreground">Available balance</p>
+        <p className="text-xs text-muted-foreground">
+          {isRetirement ? 'Retirement balance' : 'Available balance'}
+        </p>
         <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">
           {formatCurrency(account.balanceCents, account.currency)}
         </p>
