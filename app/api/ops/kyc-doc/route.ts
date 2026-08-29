@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { ensureKycTable } from '@/lib/db/ensure-columns'
 import { kycSubmission } from '@/lib/db/schema'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 import { eq } from 'drizzle-orm'
@@ -21,6 +22,13 @@ export async function GET(req: NextRequest) {
 
   if (!Number.isFinite(id) || id <= 0) {
     return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
+  }
+
+  try {
+    await ensureKycTable()
+  } catch (err) {
+    console.error('[ops/kyc-doc] ensure table failed', err)
+    return NextResponse.json({ error: 'Database not ready' }, { status: 503 })
   }
 
   const rows = await db

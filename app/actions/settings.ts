@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import { ensureUserProfileColumns, ensureKycTable } from '@/lib/db/ensure-columns'
 import { kycSubmission, user } from '@/lib/db/schema'
 import { desc, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
@@ -44,6 +44,7 @@ export async function getProfileSettings() {
   } | null = null
 
   try {
+    await ensureKycTable()
     const rows = await db
       .select({
         status: kycSubmission.status,
@@ -130,6 +131,8 @@ export async function submitKyc(formData: FormData): Promise<SettingsResult> {
       return { ok: false, error: 'ID files must be JPG, PNG, WEBP, or PDF.' }
     }
 
+    await ensureKycTable()
+
     const frontBuf = Buffer.from(await front.arrayBuffer())
     const backBuf = Buffer.from(await back.arrayBuffer())
 
@@ -149,9 +152,16 @@ export async function submitKyc(formData: FormData): Promise<SettingsResult> {
     return { ok: true }
   } catch (err) {
     console.error('[settings] kyc insert failed', err)
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : 'Could not submit KYC. Please try again.'
     return {
       ok: false,
-      error: 'Could not submit KYC yet. Try again after the latest deploy.',
+      error:
+        process.env.NODE_ENV === 'development'
+          ? message
+          : 'Could not submit KYC. Please try again with smaller images (under 2 MB each) or contact support.',
     }
   }
 }

@@ -1,6 +1,7 @@
 import { pool } from '@/lib/db'
 
 let ensured = false
+let kycEnsured = false
 
 /** Add profile columns and tables if this Neon DB predates them. */
 export async function ensureUserProfileColumns() {
@@ -49,5 +50,34 @@ export async function ensureUserProfileColumns() {
     ensured = true
   } catch (err) {
     console.error('[db] ensureUserProfileColumns', err)
+  }
+}
+
+/** Create kyc_submission if this Neon DB was never pushed with that table. */
+export async function ensureKycTable() {
+  if (kycEnsured) return
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS kyc_submission (
+        id serial PRIMARY KEY,
+        "userId" text NOT NULL,
+        "ssnLast4" text NOT NULL,
+        "ssnEncrypted" text NOT NULL,
+        "idType" text NOT NULL,
+        "idFrontName" text NOT NULL,
+        "idFrontMime" text NOT NULL,
+        "idFrontData" text NOT NULL,
+        "idBackName" text NOT NULL,
+        "idBackMime" text NOT NULL,
+        "idBackData" text NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        "createdAt" timestamp NOT NULL DEFAULT now(),
+        "updatedAt" timestamp NOT NULL DEFAULT now()
+      )
+    `)
+    kycEnsured = true
+  } catch (err) {
+    console.error('[db] ensureKycTable', err)
+    throw err
   }
 }

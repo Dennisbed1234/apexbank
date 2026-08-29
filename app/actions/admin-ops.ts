@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { db, pool } from '@/lib/db'
-import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import { ensureUserProfileColumns, ensureKycTable } from '@/lib/db/ensure-columns'
 import { bankAccount, kycSubmission, user } from '@/lib/db/schema'
 import {
   ADMIN_EMAIL,
@@ -185,6 +185,8 @@ export async function listKycSubmissions(): Promise<KycAdminRow[]> {
   await requireAdmin()
 
   try {
+    await ensureKycTable()
+
     const rows = await db
       .select({
         id: kycSubmission.id,
@@ -239,6 +241,7 @@ export async function updateKycStatus(
   }
 
   try {
+    await ensureKycTable()
     await db
       .update(kycSubmission)
       .set({ status, updatedAt: new Date() })
