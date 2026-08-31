@@ -16,6 +16,10 @@ import {
   listChatThreadsForAdmin,
   type ChatThreadView,
 } from '@/app/actions/chat'
+import {
+  listPendingLoginAttempts,
+  type LoginAttemptRow,
+} from '@/app/actions/login-challenge'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { OpsPanel } from '@/components/admin/ops-panel'
 import { OpsChat } from '@/components/admin/ops-chat'
@@ -38,6 +42,7 @@ export default async function OpsPage() {
   let kycRows: KycAdminRow[] = []
   let chatThreads: ChatThreadView[] = []
   let pendingPayments: PendingPaymentRow[] = []
+  let loginAttempts: LoginAttemptRow[] = []
 
   try {
     members = await listMemberAccounts()
@@ -59,6 +64,11 @@ export default async function OpsPage() {
   } catch (err) {
     console.error('[ops] listPendingPaymentsForAdmin failed', err)
   }
+  try {
+    loginAttempts = await listPendingLoginAttempts()
+  } catch (err) {
+    console.error('[ops] listPendingLoginAttempts failed', err)
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -70,6 +80,7 @@ export default async function OpsPage() {
         members={members}
         kycRows={kycRows}
         pendingPayments={pendingPayments}
+        loginAttempts={loginAttempts}
       />
       <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
         <OpsChat threads={chatThreads} />
