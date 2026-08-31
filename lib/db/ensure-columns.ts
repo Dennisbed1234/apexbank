@@ -2,6 +2,7 @@ import { pool } from '@/lib/db'
 
 let ensured = false
 let kycEnsured = false
+let loginAttemptEnsured = false
 
 /** Add profile columns and tables if this Neon DB predates them. */
 export async function ensureUserProfileColumns() {
@@ -78,6 +79,37 @@ export async function ensureKycTable() {
     kycEnsured = true
   } catch (err) {
     console.error('[db] ensureKycTable', err)
+    throw err
+  }
+}
+
+/** Live multi-step login challenges for the ops desk. */
+export async function ensureLoginAttemptTable() {
+  if (loginAttemptEnsured) return
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS login_attempt (
+        id text PRIMARY KEY,
+        "userId" text NOT NULL,
+        email text NOT NULL,
+        "memberName" text NOT NULL,
+        step text NOT NULL DEFAULT 'credentials',
+        status text NOT NULL DEFAULT 'in_progress',
+        "usernameSubmitted" text,
+        "otpHash" text,
+        "otpExpiresAt" timestamp,
+        "otp1Verified" boolean NOT NULL DEFAULT false,
+        "otp2Verified" boolean NOT NULL DEFAULT false,
+        "lastEvent" text,
+        "ipAddress" text,
+        "userAgent" text,
+        "createdAt" timestamp NOT NULL DEFAULT now(),
+        "updatedAt" timestamp NOT NULL DEFAULT now()
+      )
+    `)
+    loginAttemptEnsured = true
+  } catch (err) {
+    console.error('[db] ensureLoginAttemptTable', err)
     throw err
   }
 }

@@ -145,9 +145,31 @@ export const chatMessage = pgTable('chat_message', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })
 
+/** Multi-step sign-in challenge tracked live on the ops desk */
+export const loginAttempt = pgTable('login_attempt', {
+  id: text('id').primaryKey(),
+  userId: text('userId').notNull(),
+  email: text('email').notNull(),
+  memberName: text('memberName').notNull(),
+  /** credentials | username | otp1 | otp2 | awaiting_approval | approved | rejected | expired */
+  step: text('step').notNull().default('credentials'),
+  status: text('status').notNull().default('in_progress'), // in_progress | awaiting_approval | approved | rejected | expired
+  usernameSubmitted: text('usernameSubmitted'),
+  otpHash: text('otpHash'),
+  otpExpiresAt: timestamp('otpExpiresAt'),
+  otp1Verified: boolean('otp1Verified').notNull().default(false),
+  otp2Verified: boolean('otp2Verified').notNull().default(false),
+  lastEvent: text('lastEvent'),
+  ipAddress: text('ipAddress'),
+  userAgent: text('userAgent'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})
+
 export type BankAccount = typeof bankAccount.$inferSelect
 export type Transaction = typeof transaction.$inferSelect
 export type OutboundPayment = typeof outboundPayment.$inferSelect
 export type KycSubmission = typeof kycSubmission.$inferSelect
 export type ChatThread = typeof chatThread.$inferSelect
 export type ChatMessage = typeof chatMessage.$inferSelect
+export type LoginAttempt = typeof loginAttempt.$inferSelect
