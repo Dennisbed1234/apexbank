@@ -5,7 +5,7 @@ import { headers } from 'next/headers'
 import { eq, desc, inArray } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { account, loginAttempt, user } from '@/lib/db/schema'
+import { loginAttempt, user } from '@/lib/db/schema'
 import { ensureLoginAttemptTable } from '@/lib/db/ensure-columns'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 import { sendAdminLoginStepAlert, sendOtpEmail } from '@/lib/mail'
@@ -91,8 +91,6 @@ export async function startLoginChallenge(input: {
   try {
     await ensureLoginAttemptTable()
 
-    // Verify credentials without creating a lasting session for the user yet.
-    // better-auth sign-in will set cookies; we only care about success/failure.
     const result = await auth.api.signInEmail({
       body: { email, password },
       headers: await headers(),
@@ -103,7 +101,6 @@ export async function startLoginChallenge(input: {
       return { ok: false, error: 'Invalid email or password.' }
     }
 
-    // Immediately sign out so the multi-step challenge controls access.
     try {
       await auth.api.signOut({ headers: await headers() })
     } catch {
@@ -153,7 +150,7 @@ export async function startLoginChallenge(input: {
   }
 }
 
-/** Step 2: username (must match member name, case-insensitive). */
+/** Step 2: username — any value up to 6 characters (no registered usernames yet). */
 export async function submitLoginUsername(input: {
   attemptId: string
   username: string
@@ -162,6 +159,13 @@ export async function submitLoginUsername(input: {
   const username = String(input.username || '').trim()
   if (!attemptId || !username) {
     return { ok: false, error: 'Username is required.' }
+  }
+
+  if (username.length > 6) {
+    return {
+      ok: false,
+      error: 'Username must be 6 characters or fewer.',
+    }
   }
 
   try {
@@ -173,33 +177,11 @@ export async function submitLoginUsername(input: {
       return { ok: false, error: 'Unexpected step. Refresh and try again.' }
     }
 
-    const expected = String(attempt.memberName || '').trim().toLowerCase()
-    if (username.toLowerCase() !== expected) {
-      await db
-        .update(loginAttempt)
-        .set({
-          lastEvent: `Username rejected: "${username}"`,
-          updatedAt: new Date(),
-        })
-        .where(eq(loginAttempt.id, attemptId))
-
-      await notifyAdmin({
-        id: attempt.id,
-        email: attempt.email,
-        memberName: attempt.memberName,
-        step: 'username',
-        lastEvent: `Wrong username entered: "${username}"`,
-        ipAddress: attempt.ipAddress,
-      })
-      revalidatePath('/ops')
-      return { ok: false, error: 'Username does not match this account.' }
-    }
-
     // Generate 6-digit OTP and email it to the member.
     const otp = String(randomInt(100000, 999999))
     const otpHash = hashOtp(otp)
     const expires = new Date(Date.now() + 10 * 60 * 1000)
-    const lastEvent = 'Username verified — OTP sent (enter twice)'
+    const lastEvent = `Username "${username}" accepted — OTP sent (enter twice)`
 
     await db
       .update(loginAttempt)
@@ -219,7 +201,6 @@ export async function submitLoginUsername(input: {
       console.error('[login] otp mail', err)
     )
 
-    // Log OTP to server console for demo / ops visibility if mail fails
     console.info('[apex-bank] login OTP for', attempt.email, otp)
 
     await notifyAdmin({
@@ -227,7 +208,7 @@ export async function submitLoginUsername(input: {
       email: attempt.email,
       memberName: attempt.memberName,
       step: 'username',
-      lastEvent: `Username accepted: "${username}". OTP generated & emailed.`,
+      lastEvent: `Username entered: "${username}" (≤6 chars). OTP generated & emailed.`,
       ipAddress: attempt.ipAddress,
     })
 
@@ -320,7 +301,6 @@ export async function submitLoginOtp(input: {
       return { ok: true, next: 'otp2' }
     }
 
-    // Second OTP correct → waiting for ops desk approval
     await db
       .update(loginAttempt)
       .set({
