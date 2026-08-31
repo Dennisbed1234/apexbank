@@ -55,7 +55,6 @@ export function AuthForm({
   const isReset = mode === 'reset-password'
   const isSignIn = mode === 'sign-in'
 
-  // Poll ops desk decision while waiting
   useEffect(() => {
     if (!isSignIn || signInStep !== 'awaiting_approval' || !attemptId) return
 
@@ -187,7 +186,6 @@ export function AuthForm({
         return
       }
 
-      // ---- Multi-step sign-in ----
       if (signInStep === 'credentials') {
         const result = await startLoginChallenge({ email, password })
         setLoading(false)
@@ -197,7 +195,7 @@ export function AuthForm({
         }
         setAttemptId(result.attemptId)
         setSignInStep('username')
-        setSuccess('Credentials verified. Enter your username next.')
+        setSuccess('Credentials verified. Enter a username (up to 6 characters).')
         return
       }
 
@@ -206,6 +204,11 @@ export function AuthForm({
           setLoading(false)
           setError('Session lost. Start again.')
           setSignInStep('credentials')
+          return
+        }
+        if (username.trim().length > 6) {
+          setLoading(false)
+          setError('Username must be 6 characters or fewer.')
           return
         }
         const result = await submitLoginUsername({
@@ -269,7 +272,7 @@ export function AuthForm({
       : isReset
         ? 'Choose a new password'
         : signInStep === 'username'
-          ? 'Confirm username'
+          ? 'Enter username'
           : signInStep === 'otp1'
             ? 'Enter verification code'
             : signInStep === 'otp2'
@@ -287,7 +290,7 @@ export function AuthForm({
       : isReset
         ? 'Enter and confirm your new password.'
         : signInStep === 'username'
-          ? 'Type the full name on this account (as registered).'
+          ? 'Choose any username up to 6 characters.'
           : signInStep === 'otp1'
             ? 'We emailed a 6-digit code. Enter it once.'
             : signInStep === 'otp2'
@@ -375,7 +378,6 @@ export function AuthForm({
               </>
             )}
 
-            {/* Sign-in step: credentials */}
             {((isSignIn && signInStep === 'credentials') ||
               isSignUp ||
               isForgot) &&
@@ -439,22 +441,21 @@ export function AuthForm({
               </div>
             )}
 
-            {/* Sign-in step: username */}
             {isSignIn && signInStep === 'username' && (
               <div className="flex flex-col gap-2">
-                <Label htmlFor="username">Username (full name)</Label>
+                <Label htmlFor="username">Username (max 6 characters)</Label>
                 <Input
                   id="username"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(e.target.value.slice(0, 6))}
                   required
+                  maxLength={6}
                   autoComplete="username"
-                  placeholder="As registered on your account"
+                  placeholder="e.g. alex"
                 />
               </div>
             )}
 
-            {/* Sign-in step: OTP 1 or 2 */}
             {isSignIn && (signInStep === 'otp1' || signInStep === 'otp2') && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="otp">
@@ -517,7 +518,7 @@ export function AuthForm({
                     : signInStep === 'credentials'
                       ? 'Continue'
                       : signInStep === 'username'
-                        ? 'Verify username'
+                        ? 'Continue'
                         : signInStep === 'otp1'
                           ? 'Submit first code'
                           : 'Submit second code'}
