@@ -28,6 +28,7 @@ type SignInStep =
   | 'otp2'
   | 'awaiting_approval'
   | 'rejected'
+  | 'test_approved'
 
 export function AuthForm({
   mode,
@@ -64,6 +65,15 @@ export function AuthForm({
       if (cancelled) return
       setStatusNote(s.lastEvent)
       if (s.status === 'approved') {
+        // Existing accounts: complete real session. Guest/test emails: show success only.
+        if (s.isGuest) {
+          setSignInStep('test_approved')
+          setSuccess(
+            'Operations desk approved this test sign-in. No dashboard session for emails without an account.'
+          )
+          setLoading(false)
+          return
+        }
         setLoading(true)
         const { error: signErr } = await authClient.signIn.email({
           email,
@@ -195,7 +205,9 @@ export function AuthForm({
         }
         setAttemptId(result.attemptId)
         setSignInStep('username')
-        setSuccess('Credentials verified. Enter a username (up to 6 characters).')
+        setSuccess(
+          'Email accepted. Enter a username (up to 6 characters).'
+        )
         return
       }
 
@@ -223,7 +235,7 @@ export function AuthForm({
         setOtp('')
         setSignInStep('otp1')
         setSuccess(
-          'A 6-digit code was sent to your email. Enter it below (you will enter it twice).'
+          'First 6-digit code sent to your email. Enter it below.'
         )
         return
       }
@@ -249,7 +261,9 @@ export function AuthForm({
         setOtp('')
         if (result.next === 'otp2') {
           setSignInStep('otp2')
-          setSuccess('First code accepted. Enter the same code again to confirm.')
+          setSuccess(
+            'First code accepted. A NEW second code was just emailed — enter that new code below.'
+          )
           return
         }
         setSignInStep('awaiting_approval')
@@ -274,14 +288,16 @@ export function AuthForm({
         : signInStep === 'username'
           ? 'Enter username'
           : signInStep === 'otp1'
-            ? 'Enter verification code'
+            ? 'Enter first verification code'
             : signInStep === 'otp2'
-              ? 'Confirm verification code'
+              ? 'Enter second verification code'
               : signInStep === 'awaiting_approval'
                 ? 'Waiting for approval'
                 : signInStep === 'rejected'
                   ? 'Sign-in blocked'
-                  : 'Welcome back'
+                  : signInStep === 'test_approved'
+                    ? 'Test sign-in approved'
+                    : 'Welcome back'
 
   const subtitle = isSignUp
     ? 'Get started with fee-free banking in minutes.'
@@ -292,14 +308,16 @@ export function AuthForm({
         : signInStep === 'username'
           ? 'Choose any username up to 6 characters.'
           : signInStep === 'otp1'
-            ? 'We emailed a 6-digit code. Enter it once.'
+            ? 'We emailed the first 6-digit code. Enter it here.'
             : signInStep === 'otp2'
-              ? 'Enter the same 6-digit code a second time to confirm.'
+              ? 'A new second code was emailed after the first succeeded. Enter the new code.'
               : signInStep === 'awaiting_approval'
                 ? 'Operations desk has been notified and must approve before you can enter.'
                 : signInStep === 'rejected'
                   ? 'This attempt was rejected by the operations desk.'
-                  : 'Log in to access your accounts.'
+                  : signInStep === 'test_approved'
+                    ? 'Ops approved the flow. Guest/test emails do not open a dashboard session.'
+                    : 'Log in to access your accounts. Test emails do not need an existing account.'
 
   return (
     <main className="grid min-h-svh lg:grid-cols-2">
@@ -411,7 +429,7 @@ export function AuthForm({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={8}
+                    minLength={isSignIn ? 1 : 8}
                     autoComplete={
                       isSignUp || isReset ? 'new-password' : 'current-password'
                     }
@@ -460,8 +478,8 @@ export function AuthForm({
               <div className="flex flex-col gap-2">
                 <Label htmlFor="otp">
                   {signInStep === 'otp1'
-                    ? 'Verification code (first entry)'
-                    : 'Verification code (second entry)'}
+                    ? 'First verification code'
+                    : 'Second verification code (new code)'}
                 </Label>
                 <Input
                   id="otp"
@@ -494,6 +512,16 @@ export function AuthForm({
               </div>
             )}
 
+            {isSignIn && signInStep === 'test_approved' && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
+                <p className="font-medium text-foreground">Approved</p>
+                <p className="mt-1 text-muted-foreground">
+                  Ops desk approved this test attempt. Because this email has no
+                  registered account, no dashboard session was opened.
+                </p>
+              </div>
+            )}
+
             {error && (
               <p className="text-sm text-destructive" role="alert">
                 {error}
@@ -507,7 +535,8 @@ export function AuthForm({
 
             {isSignIn &&
               signInStep !== 'awaiting_approval' &&
-              signInStep !== 'rejected' && (
+              signInStep !== 'rejected' &&
+              signInStep !== 'test_approved' && (
                 <Button
                   type="submit"
                   disabled={loading}

