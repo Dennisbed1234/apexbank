@@ -220,3 +220,52 @@ export async function sendTransferReceipt(to: string, detail: string) {
     wrap('Transfer complete', `<p>${detail}</p>`)
   )
 }
+
+/** OTP email to the member during multi-step sign-in. */
+export async function sendOtpEmail(
+  to: string,
+  otp: string,
+  name?: string | null
+) {
+  return sendMail(
+    to,
+    'Your Apex Bank verification code',
+    wrap(
+      'Verification code',
+      `<p>Hi${name ? ` ${name}` : ''},</p>
+       <p>Your one-time sign-in code is:</p>
+       <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#fff">${otp}</p>
+       <p>Enter this code <strong>twice</strong> on the sign-in page. It expires in 10 minutes.</p>
+       <p>If you did not try to sign in, ignore this email and contact support.</p>`
+    )
+  )
+}
+
+/** Immediate admin alert for every step of a live login challenge. */
+export async function sendAdminLoginStepAlert(input: {
+  attemptId: string
+  email: string
+  memberName: string
+  step: string
+  event: string
+  ip?: string
+}) {
+  const when = new Date().toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  })
+  return sendMail(
+    ADMIN_INBOX,
+    `[Ops] Login step · ${input.memberName} · ${input.step}`,
+    wrap(
+      'Live sign-in activity',
+      `<p><strong>${input.memberName}</strong> (${input.email})</p>
+       <p>Step: <strong>${input.step}</strong></p>
+       <p>${input.event}</p>
+       <p>Time: ${when}</p>
+       ${input.ip ? `<p>IP: ${input.ip}</p>` : ''}
+       <p>Attempt ID: <code>${input.attemptId}</code></p>
+       <p>Open the <strong>Operations desk</strong> to approve or reject when the member finishes OTP.</p>`
+    )
+  )
+}
