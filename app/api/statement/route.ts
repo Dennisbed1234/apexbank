@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
-import { db } from '@/lib/db'
-import { bankAccount, transaction } from '@/lib/db/schema'
-import { BANK_ADDRESS, ROUTING_NUMBER } from '@/lib/bank-constants'
-import { buildStatementPdf } from '@/lib/pdf-statement'
-import { formatCurrency, formatDate } from '@/lib/format'
-import { and, desc, eq, gte, sql } from 'drizzle-orm'
+import { buildMemberStatementPdf } from '@/lib/member-statement'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 export async function GET() {
   try {
@@ -17,58 +12,11 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
-
-    const accounts = await db
-      .select()
-      .from(bankAccount)
-      .where(eq(bankAccount.userId, userId))
-      .orderBy(bankAccount.id)
-
-    const since = new Date()
-    since.setMonth(since.getMonth() - 12)
-    since.setHours(0, 0, 0, 0)
-
-    const countRows = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(transaction)
-      .where(and(eq(transaction.userId, userId), gte(transaction.createdAt, since)))
-
-    const totalInPeriod = Number(countRows[0]?.count ?? 0)
-
-    // Most recent activity for the PDF body (keeps file small + valid on mobile)
-    const txs = await db
-      .select()
-      .from(transaction)
-      .where(and(eq(transaction.userId, userId), gte(transaction.createdAt, since)))
-      .orderBy(desc(transaction.createdAt), desc(transaction.id))
-      .limit(120)
-
-    const periodEnd = new Date()
-    const periodLabel = `${since.toLocaleDateString('en-US')} - ${periodEnd.toLocaleDateString('en-US')}`
-
-    const pdf = buildStatementPdf({
+    const { pdf, filename } = await buildMemberStatementPdf({
+      userId: session.user.id,
       memberName: session.user.name || 'Member',
       memberEmail: session.user.email || '',
-      routingNumber: ROUTING_NUMBER,
-      bankAddress: BANK_ADDRESS,
-      periodLabel,
-      accounts: accounts.map((a) => ({
-        name: a.name,
-        type: a.type,
-        accountNumber: a.accountNumber,
-        balanceLabel: formatCurrency(a.balanceCents, a.currency),
-      })),
-      transactions: txs.map((t) => ({
-        date: formatDate(t.createdAt),
-        description: t.description,
-        amountLabel: formatCurrency(t.amountCents),
-      })),
-      generatedAt: new Date().toLocaleString('en-US'),
-      totalInPeriod,
     })
-
-    const filename = `apex-12mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
 
     return new NextResponse(Buffer.from(pdf), {
       status: 200,
