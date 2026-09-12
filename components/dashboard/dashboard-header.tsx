@@ -45,6 +45,22 @@ export function DashboardHeader({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/seed-history', { method: 'POST', credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.results) return
+        const incomplete = data.results.some((row: { done?: boolean }) => !row.done)
+        if (!incomplete) return
+        router.refresh()
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [router])
+
   async function handleSignOut() {
     await authClient.signOut()
     router.push('/')
