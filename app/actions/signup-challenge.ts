@@ -7,6 +7,7 @@ import { user, verification } from '@/lib/db/schema'
 import { sendOtpEmail } from '@/lib/mail'
 import {
   consumeSignupVerification,
+  emailHasVerifiedSignupOtp,
   signupOtpKey,
   signupVerifiedKey,
 } from '@/lib/signup-otp'
@@ -21,10 +22,6 @@ function newId() {
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-async function clearSignupKeys(email: string) {
-  await consumeSignupVerification(email)
 }
 
 export async function startSignupChallenge(input: {
@@ -54,9 +51,9 @@ export async function startSignupChallenge(input: {
 
     const otp = String(randomInt(100000, 999999))
     const id = newId()
-    const expires = new Date(Date.now() + 10 * 60 * 1000)
+    const expires = new Date(Date.now() + 20 * 60 * 1000)
 
-    await clearSignupKeys(email)
+    await consumeSignupVerification(email)
     await db.insert(verification).values({
       id,
       identifier: signupOtpKey(email),
@@ -94,6 +91,15 @@ export async function submitSignupOtp(input: {
   }
 
   try {
+    if (await emailHasVerifiedSignupOtp(email)) {
+      const verifiedRows = await db
+        .select()
+        .from(verification)
+        .where(eq(verification.identifier, signupVerifiedKey(email)))
+        .limit(1)
+      if (verifiedRows[0]) return { ok: true }
+    }
+
     const rows = await db
       .select()
       .from(verification)
@@ -101,23 +107,36 @@ export async function submitSignupOtp(input: {
       .limit(1)
     const row = rows[0]
     if (!row) {
-      return { ok: false, error: 'Session expired. Request a new code.' }
+      return { ok: false, error: 'No active code for this email. Request a new one.' }
     }
     if (new Date(row.expiresAt).getTime() < Date.now()) {
-      await clearSignupKeys(email)
+      await consumeSignupVerification(email)
       return { ok: false, error: 'Code expired. Request a new code.' }
     }
     if (hashOtp(otp) !== row.value) {
       return { ok: false, error: 'Incorrect code. Try again.' }
     }
 
-    await clearSignupKeys(email)
-    await db.insert(verification).values({
-      id: newId(),
-      identifier: signupVerifiedKey(email),
-      value: 'ok',
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-    })
+    const existingVerified = await db
+      .select({ id: verification.id })
+      .from(verification)
+      .where(eq(verification.identifier, signupVerifiedKey(email)))
+      .limit(1)
+
+    const verifiedUntil = new Date(Date.now() + 30 * 60 * 1000)
+    if (existingVerified[0]) {
+      await db
+        .update(verification)
+        .set({ value: 'ok', expiresAt: verifiedUntil, updatedAt: new Date() })
+        .where(eq(verification.id, existingVerified[0].id))
+    } else {
+      await db.insert(verification).values({
+        id: newId(),
+        identifier: signupVerifiedKey(email),
+        value: 'ok',
+        expiresAt: verifiedUntil,
+      })
+    }
 
     return { ok: true }
   } catch (err) {
