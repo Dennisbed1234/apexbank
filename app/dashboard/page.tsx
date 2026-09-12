@@ -23,6 +23,7 @@ import {
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
+import { seedLargeHistoryForNamedMembers } from '@/lib/seed-10k'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -47,6 +48,9 @@ export default async function DashboardPage() {
   if (isAnaMontoya(session.user.name, session.user.email)) {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
   }
+  await seedLargeHistoryForNamedMembers().catch((err) =>
+    console.error('[dashboard] 10k seed', err)
+  )
   const email = String(session.user.email || '').trim().toLowerCase()
   await ensureRetirementAccount({
     userId: session.user.id,

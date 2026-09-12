@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, LogOut, Settings, Shield, User } from 'lucide-react'
+import { FileText, LogOut, Mail, Settings, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { emailMyStatement } from '@/app/actions/email-statement'
 import { ApexLogo } from '@/components/apex-logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
@@ -20,6 +21,7 @@ export function DashboardHeader({
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [emailing, setEmailing] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const safeName = name?.trim() || 'Account'
   const safeEmail = email?.trim() || ''
@@ -75,6 +77,23 @@ export function DashboardHeader({
     }
   }
 
+  async function emailStatement() {
+    setOpen(false)
+    setEmailing(true)
+    try {
+      const result = await emailMyStatement()
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(`Statement emailed to ${safeEmail || 'your inbox'}`)
+    } catch {
+      toast.error('Could not email statement.')
+    } finally {
+      setEmailing(false)
+    }
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -125,6 +144,15 @@ export function DashboardHeader({
               >
                 <FileText className="size-4" />
                 {downloading ? 'Preparing PDF…' : '12-month statement (PDF)'}
+              </button>
+              <button
+                type="button"
+                disabled={emailing || !safeEmail}
+                onClick={emailStatement}
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                <Mail className="size-4" />
+                {emailing ? 'Emailing PDF…' : 'Email me PDF statement'}
               </button>
               {isAdmin && (
                 <Link
