@@ -2,9 +2,9 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { DEMO_MEMBER_EMAIL, DEMO_MEMBER_NAME } from '@/lib/bank-constants'
 import { isAnaMontoya } from '@/lib/seed-ana'
-import { and, eq, sql } from 'drizzle-orm'
+import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
+import { and, eq, gte, like, or, sql } from 'drizzle-orm'
 
-export const HISTORY_10K_MARKER = 'APEX 10K HISTORY LOCKED'
 export const TARGET_TX_COUNT = 10_000
 
 const MERCHANTS: Array<[string, string, number, number, boolean]> = [
@@ -19,19 +19,24 @@ const MERCHANTS: Array<[string, string, number, number, boolean]> = [
   ['ACH PAYROLL DIRECT DEP', 'Income', 185000, 525000, true],
   ['Zelle from Sofia Alvarez', 'Zelle', 2500, 85000, true],
   ['Zelle to Elena Cruz', 'Zelle', 1500, 42000, false],
-  ['Incoming wire — FIDELITY INV', 'Wire', 25000, 450000, true],
+  ['Incoming wire - FIDELITY INV', 'Wire', 25000, 450000, true],
   ['Mobile check deposit', 'Check deposit', 12000, 220000, true],
   ['WHOLEFDS', 'Groceries', 2200, 14000, false],
   ['TARGET', 'Shopping', 1200, 9800, false],
   ['VERIZON WIRELESS', 'Bills', 4500, 16500, false],
   ['ACH CREDIT CHASE', 'Income', 15000, 120000, true],
   ['BILL PAY RENT HARBOR COURT', 'Housing', 165000, 245000, false],
+  ['PUBLIX', 'Groceries', 1600, 11000, false],
+  ['CHIPOTLE', 'Dining', 900, 2800, false],
+  ['EXXONMOBIL', 'Transport', 2500, 7800, false],
+  ['SPOTIFY USA', 'Bills', 999, 1699, false],
 ]
 
-function dateDaysAgo(days: number, hour = 12) {
-  const d = new Date()
-  d.setHours(hour, (days * 7) % 60, 0, 0)
-  d.setDate(d.getDate() - days)
+function dateInLastYear(index: number, total: number) {
+  const spanMs = 365 * 24 * 60 * 60 * 1000
+  const offset = Math.floor((index / Math.max(1, total)) * spanMs)
+  const d = new Date(Date.now() - offset)
+  d.setHours(6 + (index % 14), (index * 11) % 60, index % 60, 0)
   return d
 }
 
@@ -64,76 +69,80 @@ function buildFillRows(count: number, offset = 0) {
     const [description, category, min, max, credit] = MERCHANTS[idx]
     const span = Math.max(1, max - min)
     const raw = min + ((i + offset) * 97) % span
-    const amountCents = credit ? raw : -raw
-    const daysAgo = 1 + ((i + offset) % 1600)
     rows.push({
       description,
       category,
       counterparty: description,
-      amountCents,
-      createdAt: dateDaysAgo(daysAgo, 6 + (i % 14)),
+      amountCents: credit ? raw : -raw,
+      createdAt: dateInLastYear(i + offset, TARGET_TX_COUNT),
     })
   }
   return rows
 }
 
+async function stripInternalMarkers(userId: string) {
+  await db
+    .delete(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        or(
+          like(transaction.description, '%HISTORY LOCKED%'),
+          like(transaction.description, 'APEX 10K%'),
+          like(transaction.description, 'APEX DEMO%')
+        )
+      )
+    )
+}
+
 export async function ensureTenThousandHistory(userId: string, checkingId: number) {
-  const countRows = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(transaction)
-    .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
+  await stripInternalMarkers(userId)
 
-  const existingCount = Number(countRows[0]?.count ?? 0)
+  const since = new Date()
+  since.setMonth(since.getMonth() - 12)
+  since.setHours(0, 0, 0, 0)
 
-  const markers = await db
-    .select({ id: transaction.id })
+  const yearRows = await db
+    .select({
+      id: transaction.id,
+      description: transaction.description,
+      amountCents: transaction.amountCents,
+    })
     .from(transaction)
     .where(
       and(
         eq(transaction.userId, userId),
         eq(transaction.accountId, checkingId),
-        eq(transaction.description, HISTORY_10K_MARKER)
+        gte(transaction.createdAt, since)
       )
     )
-    .limit(1)
 
-  if (existingCount >= TARGET_TX_COUNT && markers[0]) return existingCount
+  const visible = yearRows.filter(
+    (t) => !isHiddenLedgerRow(t.description, t.amountCents)
+  ).length
 
-  const needed = Math.max(0, TARGET_TX_COUNT - existingCount)
-  if (needed > 0) {
-    const history = buildFillRows(needed, existingCount)
-    const BATCH = 250
-    for (let i = 0; i < history.length; i += BATCH) {
-      const slice = history.slice(i, i + BATCH)
-      await db.insert(transaction).values(
-        slice.map((t) => ({
-          userId,
-          accountId: checkingId,
-          amountCents: t.amountCents,
-          type: t.amountCents >= 0 ? 'credit' : 'debit',
-          description: t.description,
-          category: t.category,
-          counterparty: t.counterparty,
-          createdAt: t.createdAt,
-        }))
-      )
-    }
+  const needed = Math.max(0, TARGET_TX_COUNT - visible)
+  if (needed === 0) return visible
+
+  const history = buildFillRows(needed, visible)
+  const BATCH = 250
+  for (let i = 0; i < history.length; i += BATCH) {
+    const slice = history.slice(i, i + BATCH)
+    await db.insert(transaction).values(
+      slice.map((t) => ({
+        userId,
+        accountId: checkingId,
+        amountCents: t.amountCents,
+        type: t.amountCents >= 0 ? 'credit' : 'debit',
+        description: t.description,
+        category: t.category,
+        counterparty: t.counterparty,
+        createdAt: t.createdAt,
+      }))
+    )
   }
 
-  if (!markers[0]) {
-    await db.insert(transaction).values({
-      userId,
-      accountId: checkingId,
-      amountCents: 0,
-      type: 'credit',
-      description: HISTORY_10K_MARKER,
-      category: 'System',
-      counterparty: 'Apex Bank',
-      createdAt: new Date(),
-    })
-  }
-
-  return existingCount + needed
+  return visible + needed
 }
 
 export async function seedLargeHistoryForNamedMembers() {

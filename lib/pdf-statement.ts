@@ -12,7 +12,7 @@ function escapePdf(value: string) {
 }
 
 function pageStream(lines: string[]) {
-  const cmds = ['BT', '/F1 10 Tf', '40 750 Td', '12 TL']
+  const cmds = ['BT', '/F1 8 Tf', '36 760 Td', '10 TL']
   lines.forEach((line, i) => {
     if (i > 0) cmds.push('T*')
     cmds.push(`(${escapePdf(line)}) Tj`)
@@ -32,10 +32,10 @@ export function buildStatementPdf(input: {
   generatedAt: string
   totalInPeriod: number
 }): Uint8Array {
-  const shown = input.transactions.slice(0, 400).map((t) => {
+  const shown = input.transactions.map((t) => {
     const desc =
-      t.description.length > 55 ? t.description.slice(0, 52) + '...' : t.description
-    return `${t.date.padEnd(12)} ${t.amountLabel.padStart(12)}  ${desc}`
+      t.description.length > 48 ? t.description.slice(0, 45) + '...' : t.description
+    return `${t.date.padEnd(13)}${t.amountLabel.padStart(14)}  ${desc}`
   })
 
   const header = [
@@ -53,21 +53,27 @@ export function buildStatementPdf(input: {
         `- ${a.name} (${a.type}) Acct ${a.accountNumber} Balance ${a.balanceLabel}`
     ),
     '',
-    `Ledger activity in period: ${input.totalInPeriod} transactions`,
-    `Showing most recent ${Math.min(400, input.totalInPeriod)} below`,
-    'Date         Amount        Description',
+    `Posted transactions this period: ${input.totalInPeriod}`,
+    'Complete ledger follows. Every posted item in the period is listed.',
+    'Date          Amount          Description',
   ]
 
   const footer = [
     '',
-    'Apex Bank - Member FDIC - Statement matches account history on file',
+    `End of statement - ${input.totalInPeriod} transactions`,
     input.bankAddress,
   ]
 
   const all = [...header, ...shown, ...footer]
-  const PER = 55
+  const PER = 68
   const pages: string[][] = []
-  for (let i = 0; i < all.length; i += PER) pages.push(all.slice(i, i + PER))
+  for (let i = 0; i < all.length; i += PER) {
+    const chunk = all.slice(i, i + PER)
+    if (pages.length > 0) {
+      chunk.push(`Page ${pages.length + 1}`)
+    }
+    pages.push(chunk)
+  }
   if (!pages.length) pages.push(['Apex Bank statement'])
 
   const n = pages.length
