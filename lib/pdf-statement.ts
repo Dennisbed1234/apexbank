@@ -32,8 +32,7 @@ export function buildStatementPdf(input: {
   generatedAt: string
   totalInPeriod: number
 }): Uint8Array {
-  // Cap lines so mobile download stays reliable
-  const txLines = input.transactions.slice(0, 120).map((t) => {
+  const shown = input.transactions.slice(0, 400).map((t) => {
     const desc =
       t.description.length > 55 ? t.description.slice(0, 52) + '...' : t.description
     return `${t.date.padEnd(12)} ${t.amountLabel.padStart(12)}  ${desc}`
@@ -55,7 +54,7 @@ export function buildStatementPdf(input: {
     ),
     '',
     `Ledger activity in period: ${input.totalInPeriod} transactions`,
-    `Showing most recent ${Math.min(120, input.totalInPeriod)} below`,
+    `Showing most recent ${Math.min(400, input.totalInPeriod)} below`,
     'Date         Amount        Description',
   ]
 
@@ -65,7 +64,7 @@ export function buildStatementPdf(input: {
     input.bankAddress,
   ]
 
-  const all = [...header, ...txLines, ...footer]
+  const all = [...header, ...shown, ...footer]
   const PER = 55
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) pages.push(all.slice(i, i + PER))
@@ -74,7 +73,6 @@ export function buildStatementPdf(input: {
   const n = pages.length
   const streams = pages.map(pageStream)
 
-  // Build PDF objects with correct byte offsets
   const encoder = new TextEncoder()
   const chunks: Uint8Array[] = []
   const offsets: number[] = [0]
@@ -88,16 +86,13 @@ export function buildStatementPdf(input: {
 
   push('%PDF-1.4\n')
 
-  // 1 Catalog
   offsets.push(size)
   push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
 
-  // 2 Pages
   const kids = Array.from({ length: n }, (_, i) => `${3 + i} 0 R`).join(' ')
   offsets.push(size)
   push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`)
 
-  // Page objects 3 .. 3+n-1
   for (let i = 0; i < n; i++) {
     const contentId = 3 + n + i
     const fontId = 3 + 2 * n
@@ -107,7 +102,6 @@ export function buildStatementPdf(input: {
     )
   }
 
-  // Content streams
   for (let i = 0; i < n; i++) {
     const stream = streams[i]
     const len = encoder.encode(stream).length
@@ -115,13 +109,12 @@ export function buildStatementPdf(input: {
     push(`${3 + n + i} 0 obj\n<< /Length ${len} >>\nstream\n${stream}\nendstream\nendobj\n`)
   }
 
-  // Font
   const fontId = 3 + 2 * n
   offsets.push(size)
   push(`${fontId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`)
 
   const xrefStart = size
-  const objCount = fontId // highest object number
+  const objCount = fontId
   push(`xref\n0 ${objCount + 1}\n`)
   push('0000000000 65535 f \n')
   for (let i = 1; i <= objCount; i++) {
