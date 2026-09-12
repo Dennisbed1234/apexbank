@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApexLogo } from '@/components/apex-logo'
+import { PasswordInput } from '@/components/password-input'
 
 function isValidUsPhone(value: string) {
   const digits = value.replace(/\D/g, '')
@@ -63,7 +64,7 @@ export function AuthForm({
       setLoading(false)
       return
     }
-    await notifySuccessfulLogin().catch(() => undefined)
+    notifySuccessfulLogin().catch(() => undefined)
     router.push('/dashboard')
     router.refresh()
   }
@@ -193,7 +194,6 @@ export function AuthForm({
         return
       }
 
-      // —— Sign in ——
       if (signInStep === 'credentials') {
         const result = await startLoginChallenge({ email, password })
         if (!result.ok) {
@@ -202,7 +202,6 @@ export function AuthForm({
           return
         }
 
-        // Admin: no OTP
         if ('skipOtp' in result && result.skipOtp) {
           await finishSignIn()
           return
@@ -270,7 +269,7 @@ export function AuthForm({
         </Link>
         <div className="max-w-sm">
           <p className="text-balance text-2xl font-semibold leading-snug">
-            &ldquo;Switching to Apex was the easiest financial decision I&apos;ve
+            &ldquo;Switching to Apex was the easiest financial decision I've
             ever made.&rdquo;
           </p>
           <p className="mt-4 text-sm text-sidebar-foreground/70">
@@ -365,11 +364,10 @@ export function AuthForm({
                   <Label htmlFor="password">
                     {isReset ? 'New password' : 'Password'}
                   </Label>
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={setPassword}
                     required
                     minLength={isSignIn ? 1 : 8}
                     autoComplete={
@@ -388,11 +386,10 @@ export function AuthForm({
             {((isSignUp && signUpStep === 'details') || isReset) && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="confirm">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="confirm"
-                  type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={setConfirmPassword}
                   required
                   minLength={8}
                   autoComplete="new-password"
@@ -545,7 +542,7 @@ export function AuthForm({
               </>
             ) : (
               <>
-                Don&apos;t have an account?{' '}
+                Don't have an account?{' '}
                 <Link
                   href="/sign-up"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
