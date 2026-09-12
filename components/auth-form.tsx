@@ -9,6 +9,11 @@ import {
   startLoginChallenge,
   submitLoginOtp,
 } from '@/app/actions/login-challenge'
+import {
+  resendSignupOtp,
+  startSignupChallenge,
+  submitSignupOtp,
+} from '@/app/actions/signup-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +25,7 @@ function isValidUsPhone(value: string) {
 }
 
 type SignInStep = 'credentials' | 'otp'
+type SignUpStep = 'details' | 'otp'
 
 export function AuthForm({
   mode,
@@ -36,6 +42,7 @@ export function AuthForm({
   const [otp, setOtp] = useState('')
   const [attemptId, setAttemptId] = useState<string | null>(null)
   const [signInStep, setSignInStep] = useState<SignInStep>('credentials')
+  const [signUpStep, setSignUpStep] = useState<SignUpStep>('details')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -44,6 +51,7 @@ export function AuthForm({
   const isForgot = mode === 'forgot-password'
   const isReset = mode === 'reset-password'
   const isSignIn = mode === 'sign-in'
+  const showSignupOtp = isSignUp && signUpStep === 'otp'
 
   async function finishSignIn() {
     const { error: signErr } = await authClient.signIn.email({
@@ -56,6 +64,23 @@ export function AuthForm({
       return
     }
     await notifySuccessfulLogin().catch(() => undefined)
+    router.push('/dashboard')
+    router.refresh()
+  }
+
+  async function finishSignUp() {
+    const { error: signErr } = await authClient.signUp.email({
+      email,
+      password,
+      name: name.trim(),
+      phone: phone.trim(),
+      dateOfBirth,
+    } as any)
+    if (signErr) {
+      setError(signErr.message ?? 'Something went wrong. Please try again.')
+      setLoading(false)
+      return
+    }
     router.push('/dashboard')
     router.refresh()
   }
@@ -118,38 +143,53 @@ export function AuthForm({
       }
 
       if (isSignUp) {
-        if (password !== confirmPassword) {
+        if (signUpStep === 'details') {
+          if (password !== confirmPassword) {
+            setLoading(false)
+            setError('Passwords do not match.')
+            return
+          }
+          if (password.length < 8) {
+            setLoading(false)
+            setError('Password must be at least 8 characters.')
+            return
+          }
+          if (!isValidUsPhone(phone)) {
+            setLoading(false)
+            setError('Enter a valid U.S. phone number (10 digits).')
+            return
+          }
+          if (!dateOfBirth) {
+            setLoading(false)
+            setError('Date of birth is required.')
+            return
+          }
+
+          const result = await startSignupChallenge({
+            email,
+            name: name.trim(),
+          })
+          if (!result.ok) {
+            setLoading(false)
+            setError(result.error)
+            return
+          }
+
+          setAttemptId(result.attemptId)
+          setSignUpStep('otp')
+          setOtp('')
           setLoading(false)
-          setError('Passwords do not match.')
-          return
-        }
-        if (!isValidUsPhone(phone)) {
-          setLoading(false)
-          setError('Enter a valid U.S. phone number (10 digits).')
-          return
-        }
-        if (!dateOfBirth) {
-          setLoading(false)
-          setError('Date of birth is required.')
+          setSuccess('A 6-digit code was sent to your email.')
           return
         }
 
-        const { error } = await authClient.signUp.email({
-          email,
-          password,
-          name: name.trim(),
-          phone: phone.trim(),
-          dateOfBirth,
-        } as any)
-
-        setLoading(false)
-        if (error) {
-          setError(error.message ?? 'Something went wrong. Please try again.')
+        const result = await submitSignupOtp({ email, otp })
+        if (!result.ok) {
+          setLoading(false)
+          setError(result.error)
           return
         }
-
-        router.push('/dashboard')
-        router.refresh()
+        await finishSignUp()
         return
       }
 
@@ -198,7 +238,9 @@ export function AuthForm({
   }
 
   const title = isSignUp
-    ? 'Open your account'
+    ? showSignupOtp
+      ? 'Verify your email'
+      : 'Open your account'
     : isForgot
       ? 'Reset your password'
       : isReset
@@ -208,7 +250,9 @@ export function AuthForm({
           : 'Welcome back'
 
   const subtitle = isSignUp
-    ? 'Get started with fee-free banking in minutes.'
+    ? showSignupOtp
+      ? `We emailed a 6-digit code to ${email}. Enter it to create your account.`
+      : 'Get started with fee-free banking in minutes.'
     : isForgot
       ? 'Enter your email and we will send a reset link.'
       : isReset
@@ -255,7 +299,7 @@ export function AuthForm({
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {isSignUp && (
+            {isSignUp && signUpStep === 'details' && (
               <>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="name">Full name</Label>
@@ -295,7 +339,7 @@ export function AuthForm({
             )}
 
             {((isSignIn && signInStep === 'credentials') ||
-              isSignUp ||
+              (isSignUp && signUpStep === 'details') ||
               isForgot) &&
               !isReset && (
                 <div className="flex flex-col gap-2">
@@ -314,7 +358,7 @@ export function AuthForm({
               )}
 
             {((isSignIn && signInStep === 'credentials') ||
-              isSignUp ||
+              (isSignUp && signUpStep === 'details') ||
               isReset) &&
               !isForgot && (
                 <div className="flex flex-col gap-2">
@@ -341,7 +385,7 @@ export function AuthForm({
                 </div>
               )}
 
-            {(isSignUp || isReset) && (
+            {((isSignUp && signUpStep === 'details') || isReset) && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="confirm">Confirm password</Label>
                 <Input
@@ -357,7 +401,7 @@ export function AuthForm({
               </div>
             )}
 
-            {isSignIn && signInStep === 'otp' && (
+            {((isSignIn && signInStep === 'otp') || showSignupOtp) && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="otp">Verification code</Label>
                 <Input
@@ -397,7 +441,9 @@ export function AuthForm({
               {loading
                 ? 'Please wait…'
                 : isSignUp
-                  ? 'Create account'
+                  ? showSignupOtp
+                    ? 'Verify and create account'
+                    : 'Send verification code'
                   : isForgot
                     ? 'Send reset link'
                     : isReset
@@ -421,6 +467,47 @@ export function AuthForm({
               >
                 ← Back
               </button>
+            )}
+
+            {showSignupOtp && (
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={async () => {
+                    setError(null)
+                    setSuccess(null)
+                    setLoading(true)
+                    const result = await resendSignupOtp({
+                      email,
+                      name: name.trim(),
+                    })
+                    setLoading(false)
+                    if (!result.ok) {
+                      setError(result.error)
+                      return
+                    }
+                    setAttemptId(result.attemptId)
+                    setOtp('')
+                    setSuccess('A new code was sent to your email.')
+                  }}
+                >
+                  Resend code
+                </button>
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setSignUpStep('details')
+                    setAttemptId(null)
+                    setOtp('')
+                    setError(null)
+                    setSuccess(null)
+                  }}
+                >
+                  ← Back
+                </button>
+              </div>
             )}
           </form>
 

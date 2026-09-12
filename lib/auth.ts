@@ -3,6 +3,10 @@ import { eq } from 'drizzle-orm'
 import { db, pool } from '@/lib/db'
 import { user as userTable } from '@/lib/db/schema'
 import { sendLoginAlert, sendResetPasswordEmail, sendWelcomeEmail } from '@/lib/mail'
+import {
+  consumeSignupVerification,
+  emailHasVerifiedSignupOtp,
+} from '@/app/actions/signup-challenge'
 
 export const auth = betterAuth({
   database: pool,
@@ -35,7 +39,24 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        before: async (user) => {
+          const verified = await emailHasVerifiedSignupOtp(user.email)
+          if (!verified) {
+            throw new Error(
+              'Verify your email with the code we sent before creating an account.'
+            )
+          }
+        },
         after: async (user) => {
+          try {
+            await db
+              .update(userTable)
+              .set({ emailVerified: true, updatedAt: new Date() })
+              .where(eq(userTable.id, user.id))
+            await consumeSignupVerification(user.email)
+          } catch (err) {
+            console.error('[apex-bank] mark email verified', err)
+          }
           void sendWelcomeEmail(user.email, user.name)
         },
       },
