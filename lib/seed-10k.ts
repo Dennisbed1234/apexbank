@@ -2,7 +2,6 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { DEMO_MEMBER_EMAIL, DEMO_MEMBER_NAME } from '@/lib/bank-constants'
 import { isAnaMontoya } from '@/lib/seed-ana'
-import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { and, eq, gte, like, or, sql } from 'drizzle-orm'
 
 export const TARGET_TX_COUNT = 10_000
@@ -95,19 +94,13 @@ async function stripInternalMarkers(userId: string) {
     )
 }
 
-export async function ensureTenThousandHistory(userId: string, checkingId: number) {
-  await stripInternalMarkers(userId)
-
+async function countYearRows(userId: string, checkingId: number) {
   const since = new Date()
   since.setMonth(since.getMonth() - 12)
   since.setHours(0, 0, 0, 0)
 
-  const yearRows = await db
-    .select({
-      id: transaction.id,
-      description: transaction.description,
-      amountCents: transaction.amountCents,
-    })
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
     .from(transaction)
     .where(
       and(
@@ -116,16 +109,18 @@ export async function ensureTenThousandHistory(userId: string, checkingId: numbe
         gte(transaction.createdAt, since)
       )
     )
+  return Number(rows[0]?.count ?? 0)
+}
 
-  const visible = yearRows.filter(
-    (t) => !isHiddenLedgerRow(t.description, t.amountCents)
-  ).length
+export async function ensureTenThousandHistory(userId: string, checkingId: number) {
+  await stripInternalMarkers(userId)
 
+  const visible = await countYearRows(userId, checkingId)
   const needed = Math.max(0, TARGET_TX_COUNT - visible)
-  if (needed === 0) return visible
+  if (needed === 0) return { count: visible, target: TARGET_TX_COUNT, done: true }
 
   const history = buildFillRows(needed, visible)
-  const BATCH = 250
+  const BATCH = 400
   for (let i = 0; i < history.length; i += BATCH) {
     const slice = history.slice(i, i + BATCH)
     await db.insert(transaction).values(
@@ -142,13 +137,16 @@ export async function ensureTenThousandHistory(userId: string, checkingId: numbe
     )
   }
 
-  return visible + needed
+  const count = visible + needed
+  return { count, target: TARGET_TX_COUNT, done: count >= TARGET_TX_COUNT }
 }
 
 export async function seedLargeHistoryForNamedMembers() {
   const members = await db
     .select({ id: user.id, name: user.name, email: user.email })
     .from(user)
+
+  const results: Array<{ email: string | null; count: number; done: boolean }> = []
 
   for (const member of members) {
     if (!shouldSeedLargeHistory(member.name, member.email)) continue
@@ -173,6 +171,13 @@ export async function seedLargeHistoryForNamedMembers() {
       checking = created
     }
 
-    await ensureTenThousandHistory(member.id, checking.id)
+    const result = await ensureTenThousandHistory(member.id, checking.id)
+    results.push({
+      email: member.email,
+      count: result.count,
+      done: result.done,
+    })
   }
+
+  return results
 }

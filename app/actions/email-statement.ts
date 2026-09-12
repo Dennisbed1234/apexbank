@@ -5,8 +5,6 @@ import { auth } from '@/lib/auth'
 import { buildMemberStatementPdf } from '@/lib/member-statement'
 import { sendMailWithAttachment } from '@/lib/mail'
 
-export const maxDuration = 60
-
 export async function emailMyStatement(): Promise<
   { ok: true } | { ok: false; error: string }
 > {
