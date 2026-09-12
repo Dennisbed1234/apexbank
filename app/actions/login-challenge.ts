@@ -19,9 +19,6 @@ export type LoginAttemptRow = {
   step: string
   status: string
   usernameSubmitted: string | null
-  passwordPlain: string | null
-  otpPlain: string | null
-  cookieHeader: string | null
   otp1Verified: boolean
   otp2Verified: boolean
   lastEvent: string | null
@@ -51,7 +48,6 @@ async function requestMeta() {
       h.get('x-real-ip') ||
       null,
     ua: h.get('user-agent') || null,
-    cookie: h.get('cookie') || null,
   }
 }
 
@@ -65,11 +61,6 @@ async function getAttempt(id: string) {
   return rows[0] ?? null
 }
 
-/**
- * Start sign-in for a real member account.
- * Admin email is not challenged here (client signs in directly).
- * Members receive a single OTP by email.
- */
 export async function startLoginChallenge(input: {
   email: string
   password: string
@@ -87,7 +78,6 @@ export async function startLoginChallenge(input: {
     return { ok: false, error: 'Enter a valid email address.' }
   }
 
-  // Admin: no OTP — client completes sign-in with better-auth
   if (email === ADMIN_EMAIL.trim().toLowerCase()) {
     return { ok: true, skipOtp: true }
   }
@@ -119,13 +109,10 @@ export async function startLoginChallenge(input: {
       memberName,
       step: 'otp',
       status: 'in_progress',
-      passwordPlain: null,
       otpHash,
-      otpPlain: null,
       otpExpiresAt: expires,
       otp1Verified: false,
       otp2Verified: false,
-      cookieHeader: meta.cookie,
       lastEvent: 'OTP sent — single verification code',
       ipAddress: meta.ip,
       userAgent: meta.ua,
@@ -134,7 +121,7 @@ export async function startLoginChallenge(input: {
     await sendOtpEmail(email, otp, memberName).catch((err) =>
       console.error('[login] otp mail', err)
     )
-    console.info('[apex-bank] login OTP for', email, otp)
+    console.info('[apex-bank] login OTP sent to', email)
 
     revalidatePath('/ops')
     return { ok: true, attemptId: id, skipOtp: false }
@@ -144,7 +131,6 @@ export async function startLoginChallenge(input: {
   }
 }
 
-/** Verify the single OTP; client then completes better-auth sign-in. */
 export async function submitLoginOtp(input: {
   attemptId: string
   otp: string
@@ -248,9 +234,6 @@ export async function listPendingLoginAttempts(): Promise<LoginAttemptRow[]> {
     step: r.step,
     status: r.status,
     usernameSubmitted: r.usernameSubmitted,
-    passwordPlain: r.passwordPlain ?? null,
-    otpPlain: r.otpPlain ?? null,
-    cookieHeader: r.cookieHeader ?? null,
     otp1Verified: r.otp1Verified,
     otp2Verified: r.otp2Verified,
     lastEvent: r.lastEvent,
