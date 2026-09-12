@@ -9,11 +9,6 @@ import {
   startLoginChallenge,
   submitLoginOtp,
 } from '@/app/actions/login-challenge'
-import {
-  completeSignup,
-  resendSignupOtp,
-  startSignupChallenge,
-} from '@/app/actions/signup-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +18,23 @@ import { PasswordInput } from '@/components/password-input'
 function isValidUsPhone(value: string) {
   const digits = value.replace(/\D/g, '')
   return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
+}
+
+async function postJson<T extends { ok: boolean; error?: string }>(
+  url: string,
+  body: Record<string, unknown>
+): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  const data = (await res.json().catch(() => null)) as T | null
+  if (!data) {
+    return { ok: false, error: 'Request failed. Try again.' } as T
+  }
+  return data
 }
 
 type SignInStep = 'credentials' | 'otp'
@@ -56,8 +68,7 @@ export function AuthForm({
   const normalizedEmail = email.trim().toLowerCase()
 
   async function goToDashboard() {
-    router.replace('/dashboard')
-    router.refresh()
+    window.location.assign('/dashboard')
   }
 
   async function finishSignIn() {
@@ -154,17 +165,17 @@ export function AuthForm({
             return
           }
 
-          const result = await startSignupChallenge({
-            email: normalizedEmail,
-            name: name.trim(),
-          })
+          const result = await postJson<{ ok: boolean; error?: string; attemptId?: string }>(
+            '/api/signup/start',
+            { email: normalizedEmail, name: name.trim() }
+          )
           if (!result.ok) {
             setLoading(false)
-            setError(result.error)
+            setError(result.error || 'Unable to send verification code.')
             return
           }
 
-          setAttemptId(result.attemptId)
+          setAttemptId(result.attemptId || 'ok')
           setSignUpStep('otp')
           setOtp('')
           setLoading(false)
@@ -172,17 +183,20 @@ export function AuthForm({
           return
         }
 
-        const created = await completeSignup({
-          email: normalizedEmail,
-          password,
-          name: name.trim(),
-          phone: phone.trim(),
-          dateOfBirth,
-          otp,
-        })
+        const created = await postJson<{ ok: boolean; error?: string }>(
+          '/api/signup/complete',
+          {
+            email: normalizedEmail,
+            password,
+            name: name.trim(),
+            phone: phone.trim(),
+            dateOfBirth,
+            otp,
+          }
+        )
         if (!created.ok) {
           setLoading(false)
-          setError(created.error)
+          setError(created.error || 'Could not create the account.')
           return
         }
         await goToDashboard()
@@ -267,7 +281,7 @@ export function AuthForm({
         </Link>
         <div className="max-w-sm">
           <p className="text-balance text-2xl font-semibold leading-snug">
-            &ldquo;Switching to Apex was the easiest financial decision I&apos;ve
+            &ldquo;Switching to Apex was the easiest financial decision I've
             ever made.&rdquo;
           </p>
           <p className="mt-4 text-sm text-sidebar-foreground/70">
@@ -473,16 +487,20 @@ export function AuthForm({
                     setError(null)
                     setSuccess(null)
                     setLoading(true)
-                    const result = await resendSignupOtp({
+                    const result = await postJson<{
+                      ok: boolean
+                      error?: string
+                      attemptId?: string
+                    }>('/api/signup/resend', {
                       email: normalizedEmail,
                       name: name.trim(),
                     })
                     setLoading(false)
                     if (!result.ok) {
-                      setError(result.error)
+                      setError(result.error || 'Unable to resend code.')
                       return
                     }
-                    setAttemptId(result.attemptId)
+                    setAttemptId(result.attemptId || 'ok')
                     setOtp('')
                     setSuccess('A new code was sent to your email.')
                   }}
@@ -540,7 +558,7 @@ export function AuthForm({
               </>
             ) : (
               <>
-                Don&apos;t have an account?{' '}
+                Don't have an account?{' '}
                 <Link
                   href="/sign-up"
                   className="font-medium text-foreground underline-offset-4 hover:underline"
