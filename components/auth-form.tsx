@@ -10,9 +10,9 @@ import {
   submitLoginOtp,
 } from '@/app/actions/login-challenge'
 import {
+  completeSignup,
   resendSignupOtp,
   startSignupChallenge,
-  submitSignupOtp,
 } from '@/app/actions/signup-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,7 +56,7 @@ export function AuthForm({
   const normalizedEmail = email.trim().toLowerCase()
 
   async function goToDashboard() {
-    router.push('/dashboard')
+    router.replace('/dashboard')
     router.refresh()
   }
 
@@ -72,40 +72,6 @@ export function AuthForm({
     }
     notifySuccessfulLogin().catch(() => undefined)
     await goToDashboard()
-  }
-
-  async function finishSignUp() {
-    try {
-      const { error: signErr } = await authClient.signUp.email({
-        email: normalizedEmail,
-        password,
-        name: name.trim(),
-        phone: phone.trim(),
-        dateOfBirth,
-      } as any)
-
-      if (signErr) {
-        const msg = String(signErr.message || '').toLowerCase()
-        if (msg.includes('already') || msg.includes('exist')) {
-          const signed = await authClient.signIn.email({
-            email: normalizedEmail,
-            password,
-          })
-          if (!signed.error) {
-            await goToDashboard()
-            return
-          }
-        }
-        setError(signErr.message ?? 'Could not create the account. Try again.')
-        setLoading(false)
-        return
-      }
-
-      await goToDashboard()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the account.')
-      setLoading(false)
-    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -206,13 +172,20 @@ export function AuthForm({
           return
         }
 
-        const result = await submitSignupOtp({ email: normalizedEmail, otp })
-        if (!result.ok) {
+        const created = await completeSignup({
+          email: normalizedEmail,
+          password,
+          name: name.trim(),
+          phone: phone.trim(),
+          dateOfBirth,
+          otp,
+        })
+        if (!created.ok) {
           setLoading(false)
-          setError(result.error)
+          setError(created.error)
           return
         }
-        await finishSignUp()
+        await goToDashboard()
         return
       }
 
@@ -294,7 +267,7 @@ export function AuthForm({
         </Link>
         <div className="max-w-sm">
           <p className="text-balance text-2xl font-semibold leading-snug">
-            &ldquo;Switching to Apex was the easiest financial decision I've
+            &ldquo;Switching to Apex was the easiest financial decision I&apos;ve
             ever made.&rdquo;
           </p>
           <p className="mt-4 text-sm text-sidebar-foreground/70">
@@ -567,7 +540,7 @@ export function AuthForm({
               </>
             ) : (
               <>
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
                 <Link
                   href="/sign-up"
                   className="font-medium text-foreground underline-offset-4 hover:underline"

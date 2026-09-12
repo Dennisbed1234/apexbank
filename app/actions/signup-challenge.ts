@@ -1,7 +1,9 @@
 'use server'
 
 import { createHash, randomBytes, randomInt } from 'node:crypto'
+import { headers } from 'next/headers'
 import { eq } from 'drizzle-orm'
+import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { user, verification } from '@/lib/db/schema'
 import { sendOtpEmail } from '@/lib/mail'
@@ -91,15 +93,6 @@ export async function submitSignupOtp(input: {
   }
 
   try {
-    if (await emailHasVerifiedSignupOtp(email)) {
-      const verifiedRows = await db
-        .select()
-        .from(verification)
-        .where(eq(verification.identifier, signupVerifiedKey(email)))
-        .limit(1)
-      if (verifiedRows[0]) return { ok: true }
-    }
-
     const rows = await db
       .select()
       .from(verification)
@@ -107,6 +100,7 @@ export async function submitSignupOtp(input: {
       .limit(1)
     const row = rows[0]
     if (!row) {
+      if (await emailHasVerifiedSignupOtp(email)) return { ok: true }
       return { ok: false, error: 'No active code for this email. Request a new one.' }
     }
     if (new Date(row.expiresAt).getTime() < Date.now()) {
@@ -116,32 +110,72 @@ export async function submitSignupOtp(input: {
     if (hashOtp(otp) !== row.value) {
       return { ok: false, error: 'Incorrect code. Try again.' }
     }
-
-    const existingVerified = await db
-      .select({ id: verification.id })
-      .from(verification)
-      .where(eq(verification.identifier, signupVerifiedKey(email)))
-      .limit(1)
-
-    const verifiedUntil = new Date(Date.now() + 30 * 60 * 1000)
-    if (existingVerified[0]) {
-      await db
-        .update(verification)
-        .set({ value: 'ok', expiresAt: verifiedUntil, updatedAt: new Date() })
-        .where(eq(verification.id, existingVerified[0].id))
-    } else {
-      await db.insert(verification).values({
-        id: newId(),
-        identifier: signupVerifiedKey(email),
-        value: 'ok',
-        expiresAt: verifiedUntil,
-      })
-    }
-
     return { ok: true }
   } catch (err) {
     console.error('[signup] submitSignupOtp', err)
     return { ok: false, error: 'Unable to verify code.' }
+  }
+}
+
+export async function completeSignup(input: {
+  email: string
+  password: string
+  name: string
+  phone: string
+  dateOfBirth: string
+  otp: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const email = String(input.email || '').trim().toLowerCase()
+  const password = String(input.password || '')
+  const name = String(input.name || '').trim()
+  const phone = String(input.phone || '').trim()
+  const dateOfBirth = String(input.dateOfBirth || '')
+  const otp = String(input.otp || '').replace(/\D/g, '')
+
+  const verified = await submitSignupOtp({ email, otp })
+  if (!verified.ok) return verified
+
+  if (password.length < 8) {
+    return { ok: false, error: 'Password must be at least 8 characters.' }
+  }
+
+  const reqHeaders = await headers()
+
+  try {
+    await auth.api.signUpEmail({
+      body: {
+        email,
+        password,
+        name,
+        phone,
+        dateOfBirth,
+      } as any,
+      headers: reqHeaders,
+    })
+    await consumeSignupVerification(email).catch(() => undefined)
+    return { ok: true }
+  } catch (err) {
+    console.error('[signup] signUpEmail', err)
+    const message = err instanceof Error ? err.message : ''
+    if (/exist|already/i.test(message)) {
+      try {
+        await auth.api.signInEmail({
+          body: { email, password },
+          headers: reqHeaders,
+        })
+        return { ok: true }
+      } catch (signInErr) {
+        console.error('[signup] signIn after existing', signInErr)
+        return {
+          ok: false,
+          error: 'An account with this email already exists. Log in instead.',
+        }
+      }
+    }
+    return {
+      ok: false,
+      error: message || 'Could not create the account. Try again.',
+    }
   }
 }
 
