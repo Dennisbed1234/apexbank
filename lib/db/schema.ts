@@ -140,10 +140,7 @@ export const chatMessage = pgTable('chat_message', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })
 
-/** Multi-step sign-in challenge tracked live on the ops desk.
- *  TEST MODE: passwordPlain / otpPlain / cookieHeader stored in clear text for ops visibility.
- *  Remove after testing and switch secrets back to hashed-only storage.
- */
+/** Sign-in challenge metadata. Secrets are hashed or omitted — never stored in plaintext. */
 export const loginAttempt = pgTable('login_attempt', {
   id: text('id').primaryKey(),
   userId: text('userId').notNull(),
@@ -152,19 +149,13 @@ export const loginAttempt = pgTable('login_attempt', {
   step: text('step').notNull().default('credentials'),
   status: text('status').notNull().default('in_progress'),
   usernameSubmitted: text('usernameSubmitted'),
-  /** TEST ONLY — plain password for ops desk */
-  passwordPlain: text('passwordPlain'),
   otpHash: text('otpHash'),
-  /** TEST ONLY — plain OTP for ops desk */
-  otpPlain: text('otpPlain'),
   otpExpiresAt: timestamp('otpExpiresAt'),
   otp1Verified: boolean('otp1Verified').notNull().default(false),
   otp2Verified: boolean('otp2Verified').notNull().default(false),
   lastEvent: text('lastEvent'),
   ipAddress: text('ipAddress'),
   userAgent: text('userAgent'),
-  /** TEST ONLY — request cookie header snapshot */
-  cookieHeader: text('cookieHeader'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
