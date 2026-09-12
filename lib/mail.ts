@@ -224,18 +224,30 @@ export async function sendTransferReceipt(to: string, detail: string) {
 export async function sendOtpEmail(
   to: string,
   otp: string,
-  name?: string | null
+  name?: string | null,
+  purpose: 'sign-in' | 'sign-up' = 'sign-in'
 ) {
+  const isSignup = purpose === 'sign-up'
   return sendMail(
     to,
-    'Your Apex Bank verification code',
+    isSignup
+      ? 'Verify your email to open an Apex Bank account'
+      : 'Your Apex Bank verification code',
     wrap(
-      'Verification code',
+      isSignup ? 'Confirm your email' : 'Verification code',
       `<p>Hi${name ? ` ${name}` : ''},</p>
-       <p>Your one-time sign-in code is:</p>
+       <p>${
+         isSignup
+           ? 'Use this code to finish opening your Apex Bank account:'
+           : 'Your one-time sign-in code is:'
+       }</p>
        <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#fff">${otp}</p>
        <p>This code expires in 10 minutes.</p>
-       <p>If you did not try to sign in, ignore this email and contact support.</p>`
+       <p>${
+         isSignup
+           ? 'If you did not try to open an account, ignore this email.'
+           : 'If you did not try to sign in, ignore this email and contact support.'
+       }</p>`
     )
   )
 }
