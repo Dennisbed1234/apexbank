@@ -53,10 +53,16 @@ export function AuthForm({
   const isReset = mode === 'reset-password'
   const isSignIn = mode === 'sign-in'
   const showSignupOtp = isSignUp && signUpStep === 'otp'
+  const normalizedEmail = email.trim().toLowerCase()
+
+  async function goToDashboard() {
+    router.push('/dashboard')
+    router.refresh()
+  }
 
   async function finishSignIn() {
     const { error: signErr } = await authClient.signIn.email({
-      email,
+      email: normalizedEmail,
       password,
     })
     if (signErr) {
@@ -65,25 +71,41 @@ export function AuthForm({
       return
     }
     notifySuccessfulLogin().catch(() => undefined)
-    router.push('/dashboard')
-    router.refresh()
+    await goToDashboard()
   }
 
   async function finishSignUp() {
-    const { error: signErr } = await authClient.signUp.email({
-      email,
-      password,
-      name: name.trim(),
-      phone: phone.trim(),
-      dateOfBirth,
-    } as any)
-    if (signErr) {
-      setError(signErr.message ?? 'Something went wrong. Please try again.')
+    try {
+      const { error: signErr } = await authClient.signUp.email({
+        email: normalizedEmail,
+        password,
+        name: name.trim(),
+        phone: phone.trim(),
+        dateOfBirth,
+      } as any)
+
+      if (signErr) {
+        const msg = String(signErr.message || '').toLowerCase()
+        if (msg.includes('already') || msg.includes('exist')) {
+          const signed = await authClient.signIn.email({
+            email: normalizedEmail,
+            password,
+          })
+          if (!signed.error) {
+            await goToDashboard()
+            return
+          }
+        }
+        setError(signErr.message ?? 'Could not create the account. Try again.')
+        setLoading(false)
+        return
+      }
+
+      await goToDashboard()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the account.')
       setLoading(false)
-      return
     }
-    router.push('/dashboard')
-    router.refresh()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,7 +117,7 @@ export function AuthForm({
     try {
       if (isForgot) {
         const { error } = await authClient.forgetPassword({
-          email,
+          email: normalizedEmail,
           redirectTo: '/reset-password',
         })
         setLoading(false)
@@ -167,7 +189,7 @@ export function AuthForm({
           }
 
           const result = await startSignupChallenge({
-            email,
+            email: normalizedEmail,
             name: name.trim(),
           })
           if (!result.ok) {
@@ -184,7 +206,7 @@ export function AuthForm({
           return
         }
 
-        const result = await submitSignupOtp({ email, otp })
+        const result = await submitSignupOtp({ email: normalizedEmail, otp })
         if (!result.ok) {
           setLoading(false)
           setError(result.error)
@@ -195,7 +217,10 @@ export function AuthForm({
       }
 
       if (signInStep === 'credentials') {
-        const result = await startLoginChallenge({ email, password })
+        const result = await startLoginChallenge({
+          email: normalizedEmail,
+          password,
+        })
         if (!result.ok) {
           setLoading(false)
           setError(result.error)
@@ -250,7 +275,7 @@ export function AuthForm({
 
   const subtitle = isSignUp
     ? showSignupOtp
-      ? `We emailed a 6-digit code to ${email}. Enter it to create your account.`
+      ? `We emailed a 6-digit code to ${normalizedEmail || email}. Enter it to create your account.`
       : 'Get started with fee-free banking in minutes.'
     : isForgot
       ? 'Enter your email and we will send a reset link.'
@@ -476,7 +501,7 @@ export function AuthForm({
                     setSuccess(null)
                     setLoading(true)
                     const result = await resendSignupOtp({
-                      email,
+                      email: normalizedEmail,
                       name: name.trim(),
                     })
                     setLoading(false)
