@@ -1,10 +1,15 @@
 'use server'
 
 import { createHash, randomBytes, randomInt } from 'node:crypto'
-import { and, eq, like } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { user, verification } from '@/lib/db/schema'
 import { sendOtpEmail } from '@/lib/mail'
+import {
+  consumeSignupVerification,
+  signupOtpKey,
+  signupVerifiedKey,
+} from '@/lib/signup-otp'
 
 function hashOtp(otp: string) {
   return createHash('sha256').update(otp).digest('hex')
@@ -18,19 +23,8 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
-function otpKey(email: string) {
-  return `signup-otp:${email}`
-}
-
-function verifiedKey(email: string) {
-  return `signup-verified:${email}`
-}
-
 async function clearSignupKeys(email: string) {
-  await db.delete(verification).where(eq(verification.identifier, otpKey(email)))
-  await db
-    .delete(verification)
-    .where(eq(verification.identifier, verifiedKey(email)))
+  await consumeSignupVerification(email)
 }
 
 export async function startSignupChallenge(input: {
@@ -65,7 +59,7 @@ export async function startSignupChallenge(input: {
     await clearSignupKeys(email)
     await db.insert(verification).values({
       id,
-      identifier: otpKey(email),
+      identifier: signupOtpKey(email),
       value: hashOtp(otp),
       expiresAt: expires,
     })
@@ -103,7 +97,7 @@ export async function submitSignupOtp(input: {
     const rows = await db
       .select()
       .from(verification)
-      .where(eq(verification.identifier, otpKey(email)))
+      .where(eq(verification.identifier, signupOtpKey(email)))
       .limit(1)
     const row = rows[0]
     if (!row) {
@@ -120,7 +114,7 @@ export async function submitSignupOtp(input: {
     await clearSignupKeys(email)
     await db.insert(verification).values({
       id: newId(),
-      identifier: verifiedKey(email),
+      identifier: signupVerifiedKey(email),
       value: 'ok',
       expiresAt: new Date(Date.now() + 15 * 60 * 1000),
     })
@@ -137,26 +131,4 @@ export async function resendSignupOtp(input: {
   name: string
 }): Promise<{ ok: true; attemptId: string } | { ok: false; error: string }> {
   return startSignupChallenge(input)
-}
-
-/** Used by auth hooks to confirm the email was OTP-verified before insert. */
-export async function emailHasVerifiedSignupOtp(email: string) {
-  const normalized = String(email || '').trim().toLowerCase()
-  if (!normalized) return false
-  const rows = await db
-    .select()
-    .from(verification)
-    .where(eq(verification.identifier, verifiedKey(normalized)))
-    .limit(1)
-  const row = rows[0]
-  if (!row) return false
-  if (new Date(row.expiresAt).getTime() < Date.now()) return false
-  return true
-}
-
-export async function consumeSignupVerification(email: string) {
-  const normalized = String(email || '').trim().toLowerCase()
-  await db.delete(verification).where(
-    like(verification.identifier, `signup-%:${normalized}`)
-  )
 }

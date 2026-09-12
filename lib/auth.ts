@@ -6,7 +6,7 @@ import { sendLoginAlert, sendResetPasswordEmail, sendWelcomeEmail } from '@/lib/
 import {
   consumeSignupVerification,
   emailHasVerifiedSignupOtp,
-} from '@/app/actions/signup-challenge'
+} from '@/lib/signup-otp'
 
 export const auth = betterAuth({
   database: pool,
@@ -106,7 +106,6 @@ export const auth = betterAuth({
             : []),
           ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
           ...(process.env.AUTH_URL ? [process.env.AUTH_URL] : []),
-          // Common production domains for this project
           'https://nk-theta.vercel.app',
         ]
       : []),
