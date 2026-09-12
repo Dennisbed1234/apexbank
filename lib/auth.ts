@@ -1,12 +1,9 @@
 import { betterAuth } from 'better-auth'
+import { nextCookies } from 'better-auth/next-js'
 import { eq } from 'drizzle-orm'
 import { db, pool } from '@/lib/db'
 import { user as userTable } from '@/lib/db/schema'
-import { sendLoginAlert, sendResetPasswordEmail, sendWelcomeEmail } from '@/lib/mail'
-import {
-  consumeSignupVerification,
-  emailHasVerifiedSignupOtp,
-} from '@/lib/signup-otp'
+import { sendResetPasswordEmail } from '@/lib/mail'
 
 export const auth = betterAuth({
   database: pool,
@@ -21,9 +18,6 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
-    // Always resolve successfully so Better Auth does not return an error
-    // to the client even if SMTP is not configured. The reset link is
-    // logged to the server console when email delivery fails.
     sendResetPassword: async ({ user, url }) => {
       try {
         const ok = await sendResetPasswordEmail(user.email, url)
@@ -39,44 +33,14 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => {
-          const verified = await emailHasVerifiedSignupOtp(user.email)
-          if (!verified) {
-            throw new Error(
-              'Verify your email with the code we sent before creating an account.'
-            )
-          }
-        },
         after: async (user) => {
           try {
             await db
               .update(userTable)
               .set({ emailVerified: true, updatedAt: new Date() })
               .where(eq(userTable.id, user.id))
-            await consumeSignupVerification(user.email)
           } catch (err) {
             console.error('[apex-bank] mark email verified', err)
-          }
-          void sendWelcomeEmail(user.email, user.name)
-        },
-      },
-    },
-    session: {
-      create: {
-        after: async (session) => {
-          try {
-            const rows = await db
-              .select({
-                email: userTable.email,
-                name: userTable.name,
-              })
-              .from(userTable)
-              .where(eq(userTable.id, session.userId))
-              .limit(1)
-            const row = rows[0]
-            if (row?.email) void sendLoginAlert(row.email, row.name)
-          } catch (err) {
-            console.error('[apex-bank] login mail', err)
           }
         },
       },
@@ -114,6 +78,7 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
   },
+  plugins: [nextCookies()],
   ...(process.env.NODE_ENV === 'development'
     ? {
         advanced: {
