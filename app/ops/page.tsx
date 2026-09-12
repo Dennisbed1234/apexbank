@@ -24,8 +24,10 @@ import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { OpsPanel } from '@/components/admin/ops-panel'
 import { OpsChat } from '@/components/admin/ops-chat'
 import { seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
+import { seedLargeHistoryForNamedMembers } from '@/lib/seed-10k'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 export default async function OpsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -36,6 +38,9 @@ export default async function OpsPage() {
 
   await seedAnaMontoyaIfPresent().catch((err) =>
     console.error('[ops] seed Ana Montoya failed', err)
+  )
+  await seedLargeHistoryForNamedMembers().catch((err) =>
+    console.error('[ops] 10k seed failed', err)
   )
 
   let members: MemberAccountRow[] = []
