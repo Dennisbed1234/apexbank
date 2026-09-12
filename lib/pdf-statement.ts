@@ -23,44 +23,43 @@ function pageStream(lines: string[]) {
 
 export function buildStatementPdf(input: {
   memberName: string
-  memberEmail: string
   routingNumber: string
   bankAddress: string
   periodLabel: string
-  accounts: Array<{ name: string; type: string; accountNumber: string; balanceLabel: string }>
-  transactions: Array<{ date: string; description: string; amountLabel: string }>
+  accounts: Array<{ name: string; type: string; lastFour: string; balanceLabel: string }>
+  transactions: Array<{ postedAt: string; description: string; amountLabel: string }>
   generatedAt: string
   totalInPeriod: number
 }): Uint8Array {
   const shown = input.transactions.map((t) => {
     const desc =
-      t.description.length > 48 ? t.description.slice(0, 45) + '...' : t.description
-    return `${t.date.padEnd(13)}${t.amountLabel.padStart(14)}  ${desc}`
+      t.description.length > 40 ? t.description.slice(0, 37) + '...' : t.description
+    return `${t.postedAt.padEnd(22)}${t.amountLabel.padStart(12)}  ${desc}`
   })
 
   const header = [
     'Apex Bank - 12-Month Account Statement',
     `Bank address: ${input.bankAddress}`,
-    `Generated: ${input.generatedAt}`,
-    `Statement period: ${input.periodLabel}`,
-    `Member: ${input.memberName}`,
-    `Email: ${input.memberEmail}`,
+    `Generated: ${input.generatedAt} CT`,
+    `Statement period: ${input.periodLabel} CT`,
+    `Account name: ${input.memberName}`,
     `Routing number: ${input.routingNumber}`,
     '',
     'Accounts (current balances)',
     ...input.accounts.map(
       (a) =>
-        `- ${a.name} (${a.type}) Acct ${a.accountNumber} Balance ${a.balanceLabel}`
+        `- ${a.name} (${a.type})  ****${a.lastFour}  Balance ${a.balanceLabel}`
     ),
     '',
     `Posted transactions this period: ${input.totalInPeriod}`,
-    'Complete ledger follows. Every posted item in the period is listed.',
-    'Date          Amount          Description',
+    'Each line uses the posted date and time from account history.',
+    'Posted at (CT)         Amount        Description',
   ]
 
   const footer = [
     '',
     `End of statement - ${input.totalInPeriod} transactions`,
+    'Dates and times match posted ledger timestamps (Central Time).',
     input.bankAddress,
   ]
 
