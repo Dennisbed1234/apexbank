@@ -23,7 +23,7 @@ import {
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
-import { seedLargeHistoryForNamedMembers } from '@/lib/seed-10k'
+import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -48,9 +48,6 @@ export default async function DashboardPage() {
   if (isAnaMontoya(session.user.name, session.user.email)) {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
   }
-  await seedLargeHistoryForNamedMembers().catch((err) =>
-    console.error('[dashboard] 10k seed', err)
-  )
   const email = String(session.user.email || '').trim().toLowerCase()
   await ensureRetirementAccount({
     userId: session.user.id,
@@ -80,12 +77,7 @@ export default async function DashboardPage() {
 
   const seen = new Set<string>()
   const rows = transactions
-    .filter((t) => {
-      const desc = String(t.description || '')
-      if (desc.includes('HISTORY LOCKED')) return false
-      if (t.amountCents === 0) return false
-      return true
-    })
+    .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
     .map((t) => ({
       id: t.id,
       accountId: t.accountId,
