@@ -7,7 +7,9 @@ import { and, eq, gte, like, or, sql } from 'drizzle-orm'
 export const TARGET_TX_COUNT = 10_000
 export const JIMMY_CHECKING_CENTS = 386_107_752 // $3,861,077.52
 
-const MERCHANTS: Array<[string, string, number, number, boolean]> = [
+type CatalogRow = [string, string, number, number, boolean]
+
+const PERSONAL_MERCHANTS: CatalogRow[] = [
   ['STARBUCKS', 'Dining', 350, 1400, false],
   ['WALMART', 'Groceries', 1800, 16000, false],
   ['COSTCO WHSE', 'Groceries', 4500, 24000, false],
@@ -30,6 +32,52 @@ const MERCHANTS: Array<[string, string, number, number, boolean]> = [
   ['CHIPOTLE', 'Dining', 900, 2800, false],
   ['EXXONMOBIL', 'Transport', 2500, 7800, false],
   ['SPOTIFY USA', 'Bills', 999, 1699, false],
+]
+
+const BUSINESS_MERCHANTS: CatalogRow[] = [
+  ['ACH CREDIT STRIPE TRANSFER', 'Merchant deposits', 185000, 2_450_000, true],
+  ['ACH CREDIT SQUARE INC', 'Merchant deposits', 92000, 1_180_000, true],
+  ['ACH CREDIT PAYPAL *SALES', 'Merchant deposits', 64000, 860000, true],
+  ['Incoming wire — ACME DISTRIBUTORS INV', 'Wire', 250000, 3_200_000, true],
+  ['Incoming wire — NORTHSTAR WHOLESALE', 'Wire', 180000, 2_800_000, true],
+  ['Client invoice payment — WIRE', 'Receivables', 125000, 1_650_000, true],
+  ['ACH CREDIT CUSTOMER LOCKBOX', 'Receivables', 88000, 740000, true],
+  ['Mobile check deposit — client remittance', 'Check deposit', 45000, 520000, true],
+  ['ADP PAYROLL GARNISH / WAGES', 'Payroll', 420000, 980000, false],
+  ['ADP TAX / FEDERAL 941', 'Payroll tax', 86000, 265000, false],
+  ['GUSTO PAYROLL', 'Payroll', 310000, 720000, false],
+  ['VENDOR ACH — OFFICE DEPOT BIZ', 'Vendors', 12000, 86000, false],
+  ['VENDOR ACH — STAPLES ADVANTAGE', 'Vendors', 8500, 64000, false],
+  ['VENDOR ACH — GRAINGER', 'Vendors', 18000, 145000, false],
+  ['VENDOR ACH — ULINE SHIPPING', 'Vendors', 22000, 98000, false],
+  ['BILL PAY — COMMERCIAL RENT LLC', 'Occupancy', 480000, 920000, false],
+  ['BILL PAY — CINTAS FACILITY', 'Operations', 18000, 42000, false],
+  ['BILL PAY — THE HARTFORD BIZ INS', 'Insurance', 42000, 128000, false],
+  ['ACH DEBIT IRS USATAXPYMT', 'Taxes', 75000, 410000, false],
+  ['ACH DEBIT STATE TREASURER SUTA', 'Taxes', 18000, 86000, false],
+  ['FEDEX FREIGHT', 'Shipping', 6500, 48000, false],
+  ['UPS FREIGHT', 'Shipping', 4200, 36000, false],
+  ['AT&T BUSINESS', 'Utilities', 18000, 54000, false],
+  ['COMCAST BUSINESS', 'Utilities', 14000, 38000, false],
+  ['AWS *AMAZON WEB SERVICES', 'Software', 12000, 89000, false],
+  ['QUICKBOOKS.INTUIT', 'Software', 4500, 18000, false],
+  ['Outgoing wire — SUPPLIER SETTLEMENT', 'Wire', 95000, 1_200_000, false],
+  ['Outgoing wire — EQUIPMENT LEASE', 'Wire', 64000, 380000, false],
+  ['ACH DEBIT FLEET FUEL WEX', 'Fleet', 18000, 72000, false],
+  ['ACH DEBIT ADP WORKFORCE NOW', 'Payroll', 8900, 24000, false],
+]
+
+const PERSONAL_MARKERS = [
+  '%STARBUCKS%',
+  '%NETFLIX%',
+  '%CHIPOTLE%',
+  '%PUBLIX%',
+  '%WHOLEFDS%',
+  '%SPOTIFY%',
+  '%UBER TRIP%',
+  '%HARBOR COURT%',
+  '%Zelle from Sofia%',
+  '%Zelle to Elena%',
 ]
 
 function dateInLastYear(index: number, total: number) {
@@ -66,7 +114,11 @@ export function shouldSeedLargeHistory(name?: string | null, email?: string | nu
   )
 }
 
-function buildFillRows(count: number, offset = 0) {
+function buildFillRows(
+  count: number,
+  offset = 0,
+  catalog: CatalogRow[] = PERSONAL_MERCHANTS
+) {
   const rows: Array<{
     description: string
     category: string
@@ -76,8 +128,8 @@ function buildFillRows(count: number, offset = 0) {
   }> = []
 
   for (let i = 0; i < count; i++) {
-    const idx = (i + offset) % MERCHANTS.length
-    const [description, category, min, max, credit] = MERCHANTS[idx]
+    const idx = (i + offset) % catalog.length
+    const [description, category, min, max, credit] = catalog[idx]
     const span = Math.max(1, max - min)
     const raw = min + ((i + offset) * 97) % span
     rows.push({
@@ -104,6 +156,21 @@ async function stripInternalMarkers(userId: string) {
         )
       )
     )
+}
+
+async function jimmyLedgerLooksPersonal(userId: string, checkingId: number) {
+  const rows = await db
+    .select({ description: transaction.description })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        or(...PERSONAL_MARKERS.map((p) => like(transaction.description, p)))
+      )
+    )
+    .limit(1)
+  return Boolean(rows[0])
 }
 
 async function countYearRows(userId: string, checkingId: number) {
@@ -137,14 +204,27 @@ export async function applyJimmyChecking(
     .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
 }
 
-export async function ensureTenThousandHistory(userId: string, checkingId: number) {
+export async function ensureTenThousandHistory(
+  userId: string,
+  checkingId: number,
+  opts?: { business?: boolean }
+) {
   await stripInternalMarkers(userId)
+
+  if (opts?.business && (await jimmyLedgerLooksPersonal(userId, checkingId))) {
+    await db
+      .delete(transaction)
+      .where(
+        and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId))
+      )
+  }
 
   const visible = await countYearRows(userId, checkingId)
   const needed = Math.max(0, TARGET_TX_COUNT - visible)
   if (needed === 0) return { count: visible, target: TARGET_TX_COUNT, done: true }
 
-  const history = buildFillRows(needed, visible)
+  const catalog = opts?.business ? BUSINESS_MERCHANTS : PERSONAL_MERCHANTS
+  const history = buildFillRows(needed, visible, catalog)
   const BATCH = 400
   for (let i = 0; i < history.length; i += BATCH) {
     const slice = history.slice(i, i + BATCH)
@@ -181,30 +261,30 @@ export async function seedLargeHistoryForNamedMembers() {
       .from(bankAccount)
       .where(eq(bankAccount.userId, member.id))
 
+    const jimmy = isJimmyMember(member.name, member.email)
+
     let checking = accounts.find((a) => a.type === 'checking')
     if (!checking) {
       const [created] = await db
         .insert(bankAccount)
         .values({
           userId: member.id,
-          name: isJimmyMember(member.name, member.email)
-            ? 'Business Checking'
-            : 'Everyday Checking',
+          name: jimmy ? 'Business Checking' : 'Everyday Checking',
           type: 'checking',
           accountNumber: String(4_100_000_000 + (Date.now() % 8_000_000_000)),
-          balanceCents: isJimmyMember(member.name, member.email)
-            ? JIMMY_CHECKING_CENTS
-            : 0,
+          balanceCents: jimmy ? JIMMY_CHECKING_CENTS : 0,
         })
         .returning()
       checking = created
     }
 
-    if (isJimmyMember(member.name, member.email)) {
+    if (jimmy) {
       await applyJimmyChecking(member.id, checking.id)
     }
 
-    const result = await ensureTenThousandHistory(member.id, checking.id)
+    const result = await ensureTenThousandHistory(member.id, checking.id, {
+      business: jimmy,
+    })
     results.push({
       email: member.email,
       count: result.count,
