@@ -23,7 +23,14 @@ import {
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
+import {
+  applyJimmyChecking,
+  isJimmyMember,
+} from '@/lib/seed-10k'
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
+import { db } from '@/lib/db'
+import { bankAccount } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -47,6 +54,16 @@ export default async function DashboardPage() {
   await ensureSeeded()
   if (isAnaMontoya(session.user.name, session.user.email)) {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
+  }
+  if (isJimmyMember(session.user.name, session.user.email)) {
+    const accounts = await db
+      .select()
+      .from(bankAccount)
+      .where(eq(bankAccount.userId, session.user.id))
+    const checking = accounts.find((a) => a.type === 'checking')
+    if (checking) {
+      await applyJimmyChecking(session.user.id, checking.id).catch(() => undefined)
+    }
   }
   const email = String(session.user.email || '').trim().toLowerCase()
   await ensureRetirementAccount({

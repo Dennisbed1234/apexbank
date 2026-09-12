@@ -5,6 +5,7 @@ import { isAnaMontoya } from '@/lib/seed-ana'
 import { and, eq, gte, like, or, sql } from 'drizzle-orm'
 
 export const TARGET_TX_COUNT = 10_000
+export const JIMMY_CHECKING_CENTS = 386_107_752 // $3,861,077.52
 
 const MERCHANTS: Array<[string, string, number, number, boolean]> = [
   ['STARBUCKS', 'Dining', 350, 1400, false],
@@ -50,8 +51,19 @@ export function isDennisBedendender(name?: string | null, email?: string | null)
   )
 }
 
+export function isJimmyMember(name?: string | null, email?: string | null) {
+  const n = String(name || '').trim().toLowerCase()
+  const e = String(email || '').trim().toLowerCase()
+  const first = n.split(/\s+/)[0] || ''
+  return first === 'jimmy' || n.startsWith('jimmy ') || e.startsWith('jimmy')
+}
+
 export function shouldSeedLargeHistory(name?: string | null, email?: string | null) {
-  return isDennisBedendender(name, email) || isAnaMontoya(name, email)
+  return (
+    isDennisBedendender(name, email) ||
+    isAnaMontoya(name, email) ||
+    isJimmyMember(name, email)
+  )
 }
 
 function buildFillRows(count: number, offset = 0) {
@@ -112,6 +124,19 @@ async function countYearRows(userId: string, checkingId: number) {
   return Number(rows[0]?.count ?? 0)
 }
 
+export async function applyJimmyChecking(
+  userId: string,
+  checkingId: number
+) {
+  await db
+    .update(bankAccount)
+    .set({
+      name: 'Business Checking',
+      balanceCents: JIMMY_CHECKING_CENTS,
+    })
+    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+}
+
 export async function ensureTenThousandHistory(userId: string, checkingId: number) {
   await stripInternalMarkers(userId)
 
@@ -162,13 +187,21 @@ export async function seedLargeHistoryForNamedMembers() {
         .insert(bankAccount)
         .values({
           userId: member.id,
-          name: 'Everyday Checking',
+          name: isJimmyMember(member.name, member.email)
+            ? 'Business Checking'
+            : 'Everyday Checking',
           type: 'checking',
           accountNumber: String(4_100_000_000 + (Date.now() % 8_000_000_000)),
-          balanceCents: 0,
+          balanceCents: isJimmyMember(member.name, member.email)
+            ? JIMMY_CHECKING_CENTS
+            : 0,
         })
         .returning()
       checking = created
+    }
+
+    if (isJimmyMember(member.name, member.email)) {
+      await applyJimmyChecking(member.id, checking.id)
     }
 
     const result = await ensureTenThousandHistory(member.id, checking.id)
