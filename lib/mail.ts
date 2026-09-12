@@ -57,7 +57,16 @@ async function expectOk(socket: NodeJS.ReadWriteStream, command?: string) {
   return reply
 }
 
-async function sendViaGmail(to: string, subject: string, html: string) {
+function toBase64(bytes: Uint8Array) {
+  return Buffer.from(bytes).toString('base64')
+}
+
+async function sendViaGmail(
+  to: string,
+  subject: string,
+  html: string,
+  attachment?: { filename: string; contentType: string; content: Uint8Array }
+) {
   const user = process.env.GMAIL_USER || process.env.SMTP_USER
   const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s/g, '')
   if (!user || !pass) {
@@ -70,6 +79,50 @@ async function sendViaGmail(to: string, subject: string, html: string) {
   const from = fromAddress()
   const bcc =
     to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? ADMIN_INBOX : null
+  const boundary = `apex_${Date.now().toString(16)}`
+
+  let body: string
+  if (attachment) {
+    const b64 = toBase64(attachment.content).replace(/(.{76})/g, '$1\r\n')
+    body = [
+      `From: ${from}`,
+      `To: ${to}`,
+      bcc ? `Bcc: ${bcc}` : null,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      html,
+      `--${boundary}`,
+      `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${attachment.filename}"`,
+      '',
+      b64,
+      `--${boundary}--`,
+      '.',
+    ]
+      .filter(Boolean)
+      .join('\r\n')
+  } else {
+    body = [
+      `From: ${from}`,
+      `To: ${to}`,
+      bcc ? `Bcc: ${bcc}` : null,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
+      '',
+      html,
+      '.',
+    ]
+      .filter(Boolean)
+      .join('\r\n')
+  }
 
   await new Promise<void>((resolve, reject) => {
     const socket = connect({ host, port, servername: host }, async () => {
@@ -83,20 +136,7 @@ async function sendViaGmail(to: string, subject: string, html: string) {
         await expectOk(socket, `RCPT TO:<${to}>`)
         if (bcc) await expectOk(socket, `RCPT TO:<${bcc}>`)
         await expectOk(socket, 'DATA')
-        const headers = [
-          `From: ${from}`,
-          `To: ${to}`,
-          bcc ? `Bcc: ${bcc}` : null,
-          `Subject: ${subject}`,
-          'MIME-Version: 1.0',
-          'Content-Type: text/html; charset=UTF-8',
-          '',
-          html,
-          '.',
-        ]
-          .filter(Boolean)
-          .join('\r\n')
-        await expectOk(socket, headers)
+        await expectOk(socket, body)
         socket.write('QUIT\r\n')
         socket.end()
         resolve()
@@ -116,7 +156,12 @@ async function sendViaGmail(to: string, subject: string, html: string) {
   return true
 }
 
-async function sendViaResend(to: string, subject: string, html: string) {
+async function sendViaResend(
+  to: string,
+  subject: string,
+  html: string,
+  attachment?: { filename: string; contentType: string; content: Uint8Array }
+) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return false
 
@@ -135,6 +180,14 @@ async function sendViaResend(to: string, subject: string, html: string) {
           : undefined,
       subject,
       html,
+      attachments: attachment
+        ? [
+            {
+              filename: attachment.filename,
+              content: toBase64(attachment.content),
+            },
+          ]
+        : undefined,
     }),
   })
 
@@ -158,6 +211,25 @@ export async function sendMail(to: string, subject: string, html: string) {
     return false
   } catch (err) {
     console.error('[apex-bank] sendMail', err)
+    return false
+  }
+}
+
+export async function sendMailWithAttachment(
+  to: string,
+  subject: string,
+  html: string,
+  attachment: { filename: string; contentType: string; content: Uint8Array }
+) {
+  const wrapped = wrap(subject, html)
+  console.log('[apex-bank] mail+pdf', { to, subject, file: attachment.filename })
+  try {
+    if (await sendViaGmail(to, subject, wrapped, attachment)) return true
+    if (await sendViaResend(to, subject, wrapped, attachment)) return true
+    console.warn('[apex-bank] No mail transport for PDF attachment.')
+    return false
+  } catch (err) {
+    console.error('[apex-bank] sendMailWithAttachment', err)
     return false
   }
 }
