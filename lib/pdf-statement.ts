@@ -21,6 +21,17 @@ function pageStream(lines: string[]) {
   return cmds.join('\n')
 }
 
+export type StatementMonth = {
+  label: string
+  beginningLabel: string
+  closingLabel: string
+  creditsLabel: string
+  debitsLabel: string
+  netLabel: string
+  count: number
+  transactions: Array<{ postedAt: string; description: string; amountLabel: string }>
+}
+
 export function buildStatementPdf(input: {
   memberName: string
   routingNumber: string
@@ -28,16 +39,32 @@ export function buildStatementPdf(input: {
   periodLabel: string
   months?: number
   accounts: Array<{ name: string; type: string; lastFour: string; balanceLabel: string }>
-  transactions: Array<{ postedAt: string; description: string; amountLabel: string }>
+  monthSections: StatementMonth[]
   generatedAt: string
   totalInPeriod: number
+  periodOpeningLabel: string
+  periodClosingLabel: string
+  lastMonthClosingLabel: string
 }): Uint8Array {
   const months = input.months ?? 12
-  const shown = input.transactions.map((t) => {
-    const desc =
-      t.description.length > 40 ? t.description.slice(0, 37) + '...' : t.description
-    return `${t.postedAt.padEnd(22)}${t.amountLabel.padStart(12)}  ${desc}`
-  })
+  const body: string[] = []
+
+  for (const month of input.monthSections) {
+    body.push('')
+    body.push(`======== ${month.label} ========`)
+    body.push(`Beginning balance ${month.beginningLabel}`)
+    body.push(`Posted items this month: ${month.count}`)
+    for (const t of month.transactions) {
+      const desc =
+        t.description.length > 38 ? t.description.slice(0, 35) + '...' : t.description
+      body.push(`${t.postedAt.padEnd(22)}${t.amountLabel.padStart(12)}  ${desc}`)
+    }
+    body.push(`Month credits ${month.creditsLabel}`)
+    body.push(`Month debits ${month.debitsLabel}`)
+    body.push(`Month net ${month.netLabel}`)
+    body.push(`Closing balance ${month.closingLabel}`)
+    body.push('Check: beginning + net = closing')
+  }
 
   const header = [
     `Apex Bank - ${months}-Month Account Statement`,
@@ -54,18 +81,21 @@ export function buildStatementPdf(input: {
     ),
     '',
     `Posted transactions this period: ${input.totalInPeriod}`,
-    'Each line uses the posted date and time from account history.',
+    `Period beginning balance: ${input.periodOpeningLabel}`,
+    `Period closing balance: ${input.periodClosingLabel}`,
+    'Each month: closing = beginning + credits + debits.',
     'Posted at (CT)         Amount        Description',
   ]
 
   const footer = [
     '',
     `End of statement - ${input.totalInPeriod} transactions`,
+    `Final monthly closing ${input.lastMonthClosingLabel} equals period closing ${input.periodClosingLabel}.`,
     'Dates and times match posted ledger timestamps (Central Time).',
     input.bankAddress,
   ]
 
-  const all = [...header, ...shown, ...footer]
+  const all = [...header, ...body, ...footer]
   const PER = 68
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) {

@@ -46,6 +46,27 @@ export function formatStatementStamp(date: Date | string) {
   }).format(d)
 }
 
+export function formatMonthYear(date: Date | string) {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: BANK_TIMEZONE,
+    month: 'long',
+    year: 'numeric',
+  }).format(d)
+}
+
+export function chicagoMonthKey(date: Date | string) {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BANK_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(d)
+  const year = parts.find((p) => p.type === 'year')?.value || '0000'
+  const month = parts.find((p) => p.type === 'month')?.value || '00'
+  return `${year}-${month}`
+}
+
 export function transactionReference(id: number) {
   return `APX${String(id).padStart(10, '0')}`
 }
