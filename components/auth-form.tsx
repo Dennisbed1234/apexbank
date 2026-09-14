@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApexLogo } from '@/components/apex-logo'
 import { PasswordInput } from '@/components/password-input'
+import { BANK_NAME } from '@/lib/bank-constants'
 
 function isValidUsPhone(value: string) {
   const digits = value.replace(/\D/g, '')
@@ -277,12 +278,11 @@ export function AuthForm({
       <div className="relative hidden flex-col justify-between bg-sidebar p-10 text-sidebar-foreground lg:flex">
         <Link href="/" className="flex items-center gap-2">
           <ApexLogo className="h-7 w-7 text-sidebar-primary" />
-          <span className="text-lg font-bold tracking-tight">Apex Bank</span>
+          <span className="text-lg font-bold tracking-tight">{BANK_NAME}</span>
         </Link>
         <div className="max-w-sm">
           <p className="text-balance text-2xl font-semibold leading-snug">
-            &ldquo;Switching to Apex was the easiest financial decision I've
-            ever made.&rdquo;
+            {`“Switching to ${BANK_NAME} was the easiest financial decision I've ever made.”`}
           </p>
           <p className="mt-4 text-sm text-sidebar-foreground/70">
             — A very satisfied (fictional) member
@@ -298,7 +298,7 @@ export function AuthForm({
           <Link href="/" className="mb-8 flex items-center gap-2 lg:hidden">
             <ApexLogo className="h-7 w-7 text-primary" />
             <span className="text-lg font-bold tracking-tight text-foreground">
-              Apex Bank
+              {BANK_NAME}
             </span>
           </Link>
 
