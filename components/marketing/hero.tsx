@@ -15,7 +15,7 @@ export function Hero() {
             Banking that works as hard as you do.
           </h1>
           <p className="max-w-md text-pretty text-lg leading-relaxed text-muted-foreground">
-            Fee-free checking, high-yield savings, and instant transfers — all
+            Fee-free checking, high-yield savings, and instant transfers, all
             in one beautifully simple app. Open an account in minutes.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -57,7 +57,7 @@ export function Hero() {
           <div className="absolute -inset-6 rounded-[2rem] bg-primary/5" />
           <Image
             src="/hero-card.png"
-            alt="Apex Bank premium debit card"
+            alt="Nicolet National Bank premium debit card"
             width={640}
             height={640}
             priority
