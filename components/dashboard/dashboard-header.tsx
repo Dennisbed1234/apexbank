@@ -50,15 +50,26 @@ export function DashboardHeader({
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/seed-history', { method: 'POST', credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data?.results) return
-        const incomplete = data.results.some((row: { done?: boolean }) => !row.done)
-        if (!incomplete) return
+
+    async function fillHistory() {
+      for (let i = 0; i < 8 && !cancelled; i++) {
+        const res = await fetch('/api/seed-history', {
+          method: 'POST',
+          credentials: 'include',
+        })
+        const data = res.ok ? await res.json() : null
+        if (cancelled) return
+        if (!data || data.skipped) return
+        const row = Array.isArray(data.results) ? data.results[0] : null
+        if (!row || row.done) {
+          router.refresh()
+          return
+        }
         router.refresh()
-      })
-      .catch(() => undefined)
+      }
+    }
+
+    fillHistory().catch(() => undefined)
     return () => {
       cancelled = true
     }
