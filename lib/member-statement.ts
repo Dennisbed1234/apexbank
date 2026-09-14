@@ -2,6 +2,10 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { BANK_ADDRESS, BANK_NAME, ROUTING_NUMBER } from '@/lib/bank-constants'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import {
+  displayCheckingName,
+  ensureCheckingProductName,
+} from '@/lib/account-products'
 import { buildStatementPdf, type StatementMonth, type StatementLine } from '@/lib/pdf-statement'
 import {
   BANK_TIMEZONE,
@@ -21,7 +25,6 @@ export function clampStatementMonths(value: unknown) {
   return Math.min(12, Math.max(1, Math.round(n)))
 }
 
-/** Parse YYYY-MM into calendar month bounds in local/Chicago-oriented dates */
 export function parseMonthKey(monthKey: string): { since: Date; until: Date; label: string } | null {
   const m = /^(\d{4})-(\d{2})$/.exec(String(monthKey || '').trim())
   if (!m) return null
@@ -38,7 +41,6 @@ export function parseMonthKey(monthKey: string): { since: Date; until: Date; lab
   return { since, until, label }
 }
 
-/** Last 12 calendar months for the picker (newest first) */
 export function availableStatementMonths(count = 12) {
   const out: Array<{ key: string; label: string }> = []
   const now = new Date()
@@ -94,12 +96,15 @@ function monthCatalog(since: Date, until: Date) {
   return keys
 }
 
+function safeFileName(value: string) {
+  return value.replace(/[^A-Za-z0-9 ._-]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 export async function buildMemberStatementPdf(input: {
   userId: string
   memberName: string
   memberEmail?: string
   months?: number
-  /** Specific month as YYYY-MM (e.g. 2026-08). When set, only that month is included. */
   monthKey?: string
 }) {
   const single = input.monthKey ? parseMonthKey(input.monthKey) : null
@@ -111,24 +116,29 @@ export async function buildMemberStatementPdf(input: {
   let periodLabel: string
   let filename: string
 
+  const productName = displayCheckingName(
+    null,
+    input.memberName,
+    input.memberEmail
+  )
+
   if (single) {
     since = single.since
     until = single.until
     months = 1
-    // e.g. "August 2026" -> month name only for title style "August Statement"
     const monthName = single.label.replace(/\s+\d{4}$/, '')
-    statementTitle = `${BANK_NAME} ${monthName} Statement`
+    statementTitle = `${BANK_NAME} ${productName} ${monthName} Statement`
     periodLabel = `${formatUsDate(since)} through ${formatUsDate(new Date(until.getTime() - 1))}`
-    filename = `${BANK_NAME} ${monthName} Statement.pdf`
+    filename = `${safeFileName(statementTitle)}.pdf`
   } else {
     const window = statementWindow(input.months)
     since = window.since
     until = window.until
     months = window.months
     const monthWord = months === 1 ? '1 Month' : `${months} Month`
-    statementTitle = `${BANK_NAME} ${monthWord} Statement`
+    statementTitle = `${BANK_NAME} ${productName} ${monthWord} Statement`
     periodLabel = `${formatUsDate(since)} through ${formatUsDate(until)}`
-    filename = `${BANK_NAME} ${monthWord} Statement.pdf`
+    filename = `${safeFileName(statementTitle)}.pdf`
   }
 
   await ensureUserProfileColumns()
@@ -164,7 +174,16 @@ export async function buildMemberStatementPdf(input: {
   const checking =
     accounts.find((a) => a.type === 'checking') ?? accounts[0] ?? null
 
-  // For a single month we still need history before the month to compute opening balance
+  if (checking) {
+    await ensureCheckingProductName({
+      userId: input.userId,
+      checkingId: checking.id,
+      memberName: input.memberName,
+      memberEmail: input.memberEmail,
+    })
+    checking.name = productName
+  }
+
   const historySince = new Date(since)
   historySince.setFullYear(historySince.getFullYear() - 2)
 
@@ -189,36 +208,22 @@ export async function buildMemberStatementPdf(input: {
 
   const allVisible = raw.filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
 
-  // Transactions strictly before the statement window (for opening balance)
-  const beforePeriod = allVisible.filter((t) => {
-    const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
-    return d < since
-  })
   const inPeriod = allVisible.filter((t) => {
     const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
     return d >= since && d < until
   })
 
   const closingCents = checking?.balanceCents ?? 0
-  // Work backwards from current balance if multi-month through today;
-  // for a single closed month, opening = sum of everything before that month
-  // relative to current balance requires net after the month too.
-  // Clean approach: opening = current - (sum of txs from since onward through now)
-  // Then run forward only for the selected month section(s).
   const fromSinceOnward = allVisible.filter((t) => {
     const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
     return d >= since
   })
-  const netFromSince = fromSinceOnward.reduce((s, t) => s + t.amountCents, 0)
-  // If until is in the future/now, fromSinceOnward goes to now → opening of period is correct.
-  // If single month in the past, we need net after that month too.
   const afterPeriod = allVisible.filter((t) => {
     const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
     return d >= until
   })
   const netAfter = afterPeriod.reduce((s, t) => s + t.amountCents, 0)
   const periodNet = inPeriod.reduce((s, t) => s + t.amountCents, 0)
-  // current = opening + periodNet + netAfter  =>  opening = current - periodNet - netAfter
   const openingCents = closingCents - periodNet - netAfter
 
   const grouped = new Map<string, typeof inPeriod>()
@@ -257,11 +262,10 @@ export async function buildMemberStatementPdf(input: {
       })
     }
 
-    const closingMonth = running
     return {
       label: month.label,
       beginningLabel: formatCurrency(beginningCents),
-      closingLabel: formatCurrency(closingMonth),
+      closingLabel: formatCurrency(running),
       creditsLabel: formatCurrency(creditsCents),
       debitsLabel: formatCurrency(debitsCents),
       netLabel: formatCurrency(creditsCents + debitsCents),
@@ -278,7 +282,7 @@ export async function buildMemberStatementPdf(input: {
   const statementAccounts = checking
     ? [
         {
-          name: checking.name,
+          name: productName,
           type: checking.type,
           lastFour: lastFour(checking.accountNumber),
           balanceLabel: formatCurrency(checking.balanceCents, checking.currency),
