@@ -3,12 +3,12 @@ import { Shield, Globe2, LineChart, Headphones } from 'lucide-react'
 import { SiteHeader } from '@/components/marketing/site-header'
 import { CtaFooter } from '@/components/marketing/cta-footer'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { BANK_ADDRESS } from '@/lib/bank-constants'
+import { BANK_ADDRESS, BANK_NAME } from '@/lib/bank-constants'
 
 export const metadata: Metadata = {
-  title: 'About Us — Apex Global Banking Suite',
+  title: `About Us | ${BANK_NAME}`,
   description:
-    'Apex Global Banking Suite bridges institutional security and modern digital banking for individuals, entrepreneurs, and enterprises.',
+    'Nicolet National Bank bridges institutional security and modern digital banking for individuals, entrepreneurs, and enterprises.',
 }
 
 const reasons = [
@@ -38,7 +38,7 @@ const team = [
   {
     name: 'Maria Chen',
     role: 'Founder & CEO',
-    bio: 'Maria spent a decade in fintech before founding Apex Bank to make fee-free banking the default, not the exception.',
+    bio: 'Maria spent a decade in fintech before founding Nicolet to make fee-free banking the default, not the exception.',
     initials: 'MC',
   },
   {
@@ -50,7 +50,7 @@ const team = [
   {
     name: 'Sofia Reyes',
     role: 'Chief Operating Officer',
-    bio: 'Sofia oversees operations and compliance, ensuring every Apex member is protected and well served.',
+    bio: 'Sofia oversees operations and compliance, ensuring every Nicolet member is protected and well served.',
     initials: 'SR',
   },
 ]
@@ -65,12 +65,12 @@ export default function AboutPage() {
             About us
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Welcome to Apex Global Banking Suite
+            Welcome to {BANK_NAME}
           </h1>
           <p className="mt-6 text-base leading-relaxed text-muted-foreground">
-            At Apex, we believe that modern financial management should be
+            At Nicolet, we believe that modern financial management should be
             effortless, secure, and built around your speed. Headquartered in the
-            United States, Apex Global Banking Suite was created to bridge the gap
+            United States, {BANK_NAME} was created to bridge the gap
             between world-class institutional security and modern digital banking.
           </p>
           <p className="mt-4 text-base leading-relaxed text-muted-foreground">
@@ -86,7 +86,7 @@ export default function AboutPage() {
 
         <section className="mt-16">
           <h2 className="text-2xl font-bold tracking-tight text-foreground">
-            Why Choose Apex?
+            Why Choose Nicolet?
           </h2>
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
             {reasons.map((item) => (
@@ -113,13 +113,13 @@ export default function AboutPage() {
             Our Commitment
           </h2>
           <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-            We are more than just a financial platform—we are your strategic
-            financial partner. Apex Global Banking Suite combines American
+            We are more than just a financial platform. We are your strategic
+            financial partner. {BANK_NAME} combines American
             regulatory standards with modern web technology to make banking fast,
             transparent, and completely borderless.
           </p>
           <p className="mt-4 text-base font-medium text-foreground">
-            Empower your financial future with Apex today.
+            Empower your financial future with Nicolet today.
           </p>
         </section>
 
@@ -128,7 +128,7 @@ export default function AboutPage() {
             Leadership
           </h2>
           <p className="mx-auto mt-2 max-w-xl text-center text-sm text-muted-foreground">
-            The team guiding Apex Global Banking Suite.
+            The team guiding {BANK_NAME}.
           </p>
           <div className="mt-10 grid gap-8 sm:grid-cols-3">
             {team.map((person) => (
