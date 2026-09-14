@@ -65,10 +65,10 @@ function CardFace({
       <div className="relative flex items-start justify-between">
         <div className="flex items-center gap-2">
           <div className="flex size-8 items-center justify-center rounded-lg bg-black/10 ring-1 ring-black/10">
-            <span className="text-sm font-black tracking-tighter">A</span>
+            <span className="text-sm font-black tracking-tighter">N</span>
           </div>
           <div>
-            <p className="text-[11px] font-semibold tracking-[0.18em]">APEX BANK</p>
+            <p className="text-[11px] font-semibold tracking-[0.18em]">NICOLET</p>
             <p className={`text-[10px] ${design.muted}`}>VISA DEBIT</p>
           </div>
         </div>
@@ -136,7 +136,7 @@ export function DebitCard({
   const approved = kycStatus === 'approved'
   const pending = kycStatus === 'pending'
   const design = DESIGNS.find((d) => d.id === selected) ?? DESIGNS[0]
-  const displayName = (memberName || 'APEX MEMBER').toUpperCase()
+  const displayName = (memberName || 'MEMBER').toUpperCase()
 
   function requireKyc(action: string) {
     if (approved) {
@@ -151,7 +151,7 @@ export function DebitCard({
       })
     } else {
       toast.error('KYC required', {
-        description: 'Verify your identity to order a physical Apex Debit Card.',
+        description: 'Verify your identity to order a physical Nicolet Debit Card.',
       })
     }
     router.push('/dashboard/settings')
@@ -165,7 +165,7 @@ export function DebitCard({
             Physical cards
           </p>
           <h2 className="text-lg font-bold tracking-tight text-foreground">
-            Choose your Apex card
+            Choose your Nicolet card
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Each member receives a unique Visa debit number. Checking {accountNumber}.
