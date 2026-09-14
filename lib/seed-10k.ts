@@ -9,12 +9,32 @@ export const JIMMY_CHECKING_CENTS = 177_430_126 // $1,774,301.26
 const MAX_INSERTS_PER_RUN = 2_400
 const OPENING_BALANCE_DESC = 'Opening balance'
 
-/** Fixed monthly amounts (cents) — same figure every month */
-const MONTHLY_MORTGAGE_CENTS = 8_450_00 // $8,450.00 Wells Fargo Home Mortgage
-const MONTHLY_STATE_FARM_CENTS = 1_285_00 // $1,285.00 State Farm
-const MONTHLY_PROGRESSIVE_CENTS = 642_00 // $642.00 Progressive
+/** Fixed monthly amounts — identical every month */
+const MONTHLY_MORTGAGE_CENTS = 8_450_00
+const MONTHLY_STATE_FARM_CENTS = 1_285_00
+const MONTHLY_PROGRESSIVE_CENTS = 642_00
+const MONTHLY_FPL_CENTS = 3_420_00
+const MONTHLY_COMCAST_CENTS = 289_00
+const MONTHLY_TOAST_SUB_CENTS = 165_00
+
+/** Weekly fixed amounts */
+const WEEKLY_LINEN_CENTS = 485_00
+const WEEKLY_CINTAS_CENTS = 312_00
+const WEEKLY_ECOLAB_CENTS = 195_00
+const WEEKLY_WASTE_CENTS = 210_00
+
+/** Bi-weekly payroll (ADP only) */
+const PAYROLL_CENTS = 18_750_00
 
 type CatalogRow = [string, string, number, number, boolean]
+
+type TxRow = {
+  description: string
+  category: string
+  counterparty: string
+  amountCents: number
+  createdAt: Date
+}
 
 const PERSONAL_MERCHANTS: CatalogRow[] = [
   ['STARBUCKS', 'Dining', 350, 1400, false],
@@ -41,82 +61,25 @@ const PERSONAL_MERCHANTS: CatalogRow[] = [
   ['SPOTIFY USA', 'Bills', 999, 1699, false],
 ]
 
-/**
- * Operating activity for Naples hospitality / catering LLC (~$1.7M).
- * No commercial rent — mortgage is injected once per month separately.
- * No generic insurance — State Farm / Progressive injected once per month.
- */
-const BUSINESS_MERCHANTS: CatalogRow[] = [
-  // Income
-  ['TOAST POS SETTLEMENT NAPLES', 'Income', 85000, 320000, true],
-  ['CLOVER DEPOSIT NAPLES FL', 'Income', 62000, 245000, true],
-  ['SQUARE INC PAYOUT', 'Income', 48000, 190000, true],
-  ['STRIPE PAYOUT CATERING', 'Income', 35000, 165000, true],
-  ['CATERING DEPOSIT FIFTH AVE', 'Income', 28000, 145000, true],
-  ['ACH CREDIT EVENT DEPOSIT', 'Income', 45000, 220000, true],
-  ['WIRE FROM CORPORATE CLIENT', 'Income', 95000, 480000, true],
-  ['MOBILE CHECK DEPOSIT', 'Income', 22000, 125000, true],
-  ['Zelle banquet client Naples', 'Income', 15000, 85000, true],
-  ['ACH CREDIT VENDOR REBATE', 'Income', 8500, 42000, true],
+const FOOD_VENDORS: CatalogRow[] = [
+  ['SYSCO FOODS NAPLES', 'Supplies', 28000, 125000, false],
+  ['US FOODS DISTRIBUTION', 'Supplies', 32000, 145000, false],
+  ['PFG PERFORMANCE FOOD', 'Supplies', 22000, 98000, false],
+  ['CHENEY BROTHERS INC', 'Supplies', 18000, 85000, false],
+  ['RESTAURANT DEPOT NAPLES', 'Supplies', 9500, 48000, false],
+  ['SEAFOOD ATLANTIC INC', 'Supplies', 12000, 62000, false],
+  ['PRODUCE ALLIANCE FL', 'Supplies', 4500, 22000, false],
+  ['BREAKTHRU BEVERAGE FL', 'Supplies', 6500, 32000, false],
+  ['SOUTHERN GLAZERS WINE', 'Supplies', 8500, 42000, false],
+]
 
-  // Food & beverage cost
-  ['SYSCO FOODS NAPLES', 'Supplies', 45000, 185000, false],
-  ['US FOODS DISTRIBUTION', 'Supplies', 52000, 210000, false],
-  ['PFG PERFORMANCE FOOD', 'Supplies', 38000, 165000, false],
-  ['CHENEY BROTHERS INC', 'Supplies', 28000, 125000, false],
-  ['RESTAURANT DEPOT NAPLES', 'Supplies', 18000, 85000, false],
-  ['SEAFOOD ATLANTIC INC', 'Supplies', 22000, 98000, false],
-  ['PRODUCE ALLIANCE FL', 'Supplies', 9500, 42000, false],
-  ['BREAKTHRU BEVERAGE FL', 'Supplies', 12000, 55000, false],
-  ['SOUTHERN GLAZERS WINE', 'Supplies', 15000, 68000, false],
-
-  // Utilities & ops (no rent, no insurance — those are monthly fixed)
-  ['FPL COMMERCIAL ELECTRIC', 'Bills', 18000, 52000, false],
-  ['COMCAST BUSINESS NAPLES', 'Bills', 6500, 14500, false],
-  ['WATER SEWER NAPLES UTIL', 'Utilities', 3500, 12000, false],
-  ['GAS DELIVERY COMMERCIAL', 'Utilities', 4200, 15000, false],
-  ['WASTE MANAGEMENT COMM', 'Operations', 3800, 9800, false],
-
-  // Payroll
-  ['ADP PAYROLL SERVICE', 'Payroll', 85000, 285000, false],
-  ['GUSTO PAYROLL NAPLES', 'Payroll', 72000, 245000, false],
-
-  // Tax
-  ['FL DEPT OF REVENUE TAX', 'Taxes', 28000, 125000, false],
-  ['IRS EFTPS QUARTERLY', 'Taxes', 45000, 185000, false],
-
-  // Equipment / software / ops
-  ['EQUIPMENT LEASE KITCHEN', 'Equipment', 8500, 22000, false],
-  ['POS TERMINAL LEASE', 'Equipment', 3200, 8500, false],
-  ['SQUARE HARDWARE LEASE', 'Equipment', 4500, 12000, false],
-  ['TOAST TAB SUBSCRIPTION', 'Software', 2800, 6500, false],
-  ['QUICKBOOKS ONLINE', 'Software', 1650, 4500, false],
-  ['NAPLES LINEN SERVICE', 'Operations', 4800, 14500, false],
-  ['CINTAS UNIFORM SERVICE', 'Operations', 3500, 9800, false],
-  ['ECOLAB PEST CONTROL', 'Operations', 2800, 6500, false],
-  ['GRAINGER INDUSTRIAL', 'Operations', 4500, 22000, false],
-  ['ULINE SHIPPING SUPPLY', 'Operations', 2800, 12500, false],
-  ['NAPLES FIRE PROTECTION', 'Operations', 4500, 12000, false],
-
-  // Light client entertainment
+const CLIENT_MEALS: CatalogRow[] = [
   ['CAMPIELLO RISTORANTE NAPLES', 'Dining', 8500, 28000, false],
   ['THE BAY HOUSE NAPLES FL', 'Dining', 9500, 32000, false],
   ['BLEU PROVENCE NAPLES FL', 'Dining', 12000, 42000, false],
   ['DORONA STEAK NAPLES FL', 'Dining', 11000, 38000, false],
-]
-
-const CLIENT_ENTERTAINMENT: CatalogRow[] = [
-  ['THE LOCAL NAPLES FL', 'Dining', 4200, 14500, false],
   ['USS NEMO NAPLES FL', 'Dining', 8500, 28000, false],
   ['BARBATELLA 5TH AVE NAPLES', 'Dining', 6500, 22000, false],
-  ['VERGINA RISTORANTE NAPLES', 'Dining', 7200, 25000, false],
-]
-
-const JIMMY_BUSINESS_CATALOG: CatalogRow[] = [
-  ...BUSINESS_MERCHANTS,
-  ...BUSINESS_MERCHANTS,
-  ...BUSINESS_MERCHANTS,
-  ...CLIENT_ENTERTAINMENT,
 ]
 
 const WIPE_MARKERS = [
@@ -128,16 +91,10 @@ const WIPE_MARKERS = [
   '%HARBOR COURT%',
   '%Zelle from Sofia%',
   '%Zelle to Elena%',
-  '%STRIPE%',
-  '%SQUARE INC%',
-  '%ADP %',
-  '%GRAINGER%',
-  '%ULINE%',
-  '%GUSTO PAYROLL%',
-  '%QUICKBOOKS%',
-  '%COMMERCIAL RENT%',
   '%WALMART%',
   '%COSTCO%',
+  '%COMMERCIAL RENT%',
+  '%GUSTO PAYROLL%',
 ]
 
 const PERSONAL_PATTERNS = [
@@ -176,22 +133,29 @@ const PERSONAL_PATTERNS = [
   'BHA BHA',
   'THE CONTINENTAL',
   'THE LOCAL',
-  'TOOJAYS',
-  'COLUMBIA RESTAURANT',
-  "JOE'S STONE CRAB",
-  'IN-N-OUT',
-  'SHAKE SHACK',
   'COMMERCIAL RENT',
   'GENERAL LIABILITY INS',
   'PROPERTY INSURANCE',
   'WORKER COMP INSURANCE',
+  'GUSTO PAYROLL',
 ]
 
-function dateInLastYear(index: number, total: number) {
-  const spanMs = 365 * 24 * 60 * 60 * 1000
-  const offset = Math.floor((index / Math.max(1, total)) * spanMs)
-  const d = new Date(Date.now() - offset)
-  d.setHours(6 + (index % 14), (index * 11) % 60, index % 60, 0)
+function hash(n: number) {
+  let x = n | 0
+  x = ((x >>> 16) ^ x) * 0x45d9f3b
+  x = ((x >>> 16) ^ x) * 0x45d9f3b
+  x = (x >>> 16) ^ x
+  return Math.abs(x)
+}
+
+function randBetween(seed: number, min: number, max: number) {
+  const span = Math.max(1, max - min)
+  return min + (hash(seed) % span)
+}
+
+function atTime(base: Date, hour: number, minute = 0) {
+  const d = new Date(base)
+  d.setHours(hour, minute, hash(base.getTime() + hour) % 60, 0)
   return d
 }
 
@@ -203,13 +167,11 @@ function openingBalanceDate() {
   return d
 }
 
-/** First of each of the last 12 months, midday */
 function monthlyFixedDates(): Date[] {
   const dates: Date[] = []
   const now = new Date()
   for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1, 10, 15, 0, 0)
-    dates.push(d)
+    dates.push(new Date(now.getFullYear(), now.getMonth() - i, 1, 10, 15, 0, 0))
   }
   return dates
 }
@@ -245,31 +207,287 @@ export function shouldSeedLargeHistory(name?: string | null, email?: string | nu
   )
 }
 
+/**
+ * Realistic day-by-day history for a Naples hospitality LLC.
+ * - Noisy POS (weekday/weekend, soft days, spikes)
+ * - Single payroll (ADP bi-weekly)
+ * - Weekly vendors once per week
+ * - Monthly mortgage + insurance once per month
+ * - Stable volume, no synthetic decay curve
+ */
+function buildJimmyRealisticHistory(): TxRow[] {
+  const rows: TxRow[] = []
+  const now = new Date()
+  now.setHours(12, 0, 0, 0)
+
+  // ~365 days back
+  for (let dayOffset = 364; dayOffset >= 0; dayOffset--) {
+    const day = new Date(now)
+    day.setDate(day.getDate() - dayOffset)
+    const dow = day.getDay() // 0 Sun … 6 Sat
+    const seed = day.getFullYear() * 10000 + (day.getMonth() + 1) * 100 + day.getDate()
+
+    // Skip pure Sundays for most ops (light POS only)
+    const isWeekend = dow === 0 || dow === 6
+    const isFriday = dow === 5
+
+    // ——— POS / income (noisy, not monotonic) ———
+    // Base by day of week; then ± noise; occasional soft day or spike
+    let posBase = 145000 // ~$1,450
+    if (dow === 5 || dow === 6) posBase = 210000 // Fri/Sat stronger
+    if (dow === 1 || dow === 2) posBase = 98000 // Mon/Tue softer
+    if (dow === 0) posBase = 72000 // Sunday light
+
+    const noise = randBetween(seed + 1, -35000, 45000)
+    const softDay = hash(seed + 2) % 17 === 0 // occasional soft day
+    const spikeDay = hash(seed + 3) % 23 === 0 // occasional catering spike
+    let posAmt = posBase + noise
+    if (softDay) posAmt = Math.floor(posAmt * 0.45)
+    if (spikeDay) posAmt = Math.floor(posAmt * 1.85) + randBetween(seed + 4, 40000, 120000)
+
+    // Alternate Toast / Clover / Square so no single processor dominates every day
+    const processor = seed % 3
+    const posName =
+      processor === 0
+        ? 'TOAST POS SETTLEMENT NAPLES'
+        : processor === 1
+          ? 'CLOVER DEPOSIT NAPLES FL'
+          : 'SQUARE INC PAYOUT'
+
+    if (posAmt > 20000) {
+      rows.push({
+        description: posName,
+        category: 'Income',
+        counterparty: posName,
+        amountCents: posAmt,
+        createdAt: atTime(day, 6, 30),
+      })
+    }
+
+    // Occasional catering / event / Zelle (not every day)
+    if (hash(seed + 5) % 11 === 0) {
+      rows.push({
+        description: 'CATERING DEPOSIT FIFTH AVE',
+        category: 'Income',
+        counterparty: 'CATERING DEPOSIT FIFTH AVE',
+        amountCents: randBetween(seed + 6, 28000, 145000),
+        createdAt: atTime(day, 11, 0),
+      })
+    }
+    if (hash(seed + 7) % 19 === 0) {
+      rows.push({
+        description: 'Zelle banquet client Naples',
+        category: 'Income',
+        counterparty: 'Zelle banquet client Naples',
+        amountCents: randBetween(seed + 8, 12000, 68000),
+        createdAt: atTime(day, 14, 20),
+      })
+    }
+    if (hash(seed + 9) % 31 === 0) {
+      rows.push({
+        description: 'MOBILE CHECK DEPOSIT',
+        category: 'Income',
+        counterparty: 'MOBILE CHECK DEPOSIT',
+        amountCents: randBetween(seed + 10, 18000, 95000),
+        createdAt: atTime(day, 9, 45),
+      })
+    }
+
+    // ——— Food cost: 2–4 deliveries on weekdays only ———
+    if (!isWeekend) {
+      const deliveries = 1 + (hash(seed + 11) % 3) // 1–3
+      for (let d = 0; d < deliveries; d++) {
+        const v = FOOD_VENDORS[(seed + d * 7) % FOOD_VENDORS.length]
+        const [desc, cat, min, max] = v
+        rows.push({
+          description: desc,
+          category: cat,
+          counterparty: desc,
+          amountCents: -randBetween(seed + 12 + d, min, max),
+          createdAt: atTime(day, 8 + d, 15 + d * 10),
+        })
+      }
+    }
+
+    // ——— Weekly vendors (once per week on fixed weekday) ———
+    if (dow === 2) {
+      // Tuesday: linen
+      rows.push({
+        description: 'NAPLES LINEN SERVICE',
+        category: 'Operations',
+        counterparty: 'Naples Linen Service',
+        amountCents: -WEEKLY_LINEN_CENTS,
+        createdAt: atTime(day, 10, 0),
+      })
+    }
+    if (dow === 3) {
+      // Wednesday: uniforms + pest
+      rows.push({
+        description: 'CINTAS UNIFORM SERVICE',
+        category: 'Operations',
+        counterparty: 'Cintas',
+        amountCents: -WEEKLY_CINTAS_CENTS,
+        createdAt: atTime(day, 10, 30),
+      })
+      rows.push({
+        description: 'ECOLAB PEST CONTROL',
+        category: 'Operations',
+        counterparty: 'Ecolab',
+        amountCents: -WEEKLY_ECOLAB_CENTS,
+        createdAt: atTime(day, 11, 0),
+      })
+    }
+    if (dow === 4) {
+      // Thursday: waste
+      rows.push({
+        description: 'WASTE MANAGEMENT COMM',
+        category: 'Operations',
+        counterparty: 'Waste Management',
+        amountCents: -WEEKLY_WASTE_CENTS,
+        createdAt: atTime(day, 9, 0),
+      })
+    }
+
+    // ——— Payroll: ADP only, bi-weekly Fridays ———
+    if (isFriday) {
+      // Every other Friday
+      const weekNum = Math.floor(dayOffset / 7)
+      if (weekNum % 2 === 0) {
+        rows.push({
+          description: 'ADP PAYROLL SERVICE',
+          category: 'Payroll',
+          counterparty: 'ADP',
+          amountCents: -PAYROLL_CENTS + randBetween(seed + 20, -80000, 120000),
+          createdAt: atTime(day, 7, 0),
+        })
+      }
+    }
+
+    // ——— Occasional client meal (rare) ———
+    if (!isWeekend && hash(seed + 21) % 14 === 0) {
+      const meal = CLIENT_MEALS[hash(seed + 22) % CLIENT_MEALS.length]
+      const [desc, cat, min, max] = meal
+      rows.push({
+        description: desc,
+        category: cat,
+        counterparty: desc,
+        amountCents: -randBetween(seed + 23, min, max),
+        createdAt: atTime(day, 19, 30),
+      })
+    }
+
+    // ——— Occasional ops (Grainger, Uline, fire — monthly-ish) ———
+    if (hash(seed + 24) % 28 === 0) {
+      rows.push({
+        description: 'GRAINGER INDUSTRIAL',
+        category: 'Operations',
+        counterparty: 'Grainger',
+        amountCents: -randBetween(seed + 25, 4500, 22000),
+        createdAt: atTime(day, 13, 0),
+      })
+    }
+    if (hash(seed + 26) % 35 === 0) {
+      rows.push({
+        description: 'NAPLES FIRE PROTECTION',
+        category: 'Operations',
+        counterparty: 'Naples Fire Protection',
+        amountCents: -randBetween(seed + 27, 4500, 12000),
+        createdAt: atTime(day, 14, 0),
+      })
+    }
+  }
+
+  // ——— Monthly fixed costs (mortgage, insurance, utilities) ———
+  for (const createdAt of monthlyFixedDates()) {
+    rows.push({
+      description: 'WELLS FARGO HOME MORTGAGE',
+      category: 'Housing',
+      counterparty: 'Wells Fargo Home Mortgage',
+      amountCents: -MONTHLY_MORTGAGE_CENTS,
+      createdAt,
+    })
+    rows.push({
+      description: 'STATE FARM INSURANCE',
+      category: 'Insurance',
+      counterparty: 'State Farm',
+      amountCents: -MONTHLY_STATE_FARM_CENTS,
+      createdAt: new Date(createdAt.getTime() + 2 * 3600_000),
+    })
+    rows.push({
+      description: 'PROGRESSIVE INSURANCE',
+      category: 'Insurance',
+      counterparty: 'Progressive',
+      amountCents: -MONTHLY_PROGRESSIVE_CENTS,
+      createdAt: new Date(createdAt.getTime() + 4 * 3600_000),
+    })
+    rows.push({
+      description: 'FPL COMMERCIAL ELECTRIC',
+      category: 'Bills',
+      counterparty: 'FPL',
+      amountCents: -MONTHLY_FPL_CENTS + randBetween(createdAt.getTime(), -40000, 50000),
+      createdAt: new Date(createdAt.getTime() + 6 * 3600_000),
+    })
+    rows.push({
+      description: 'COMCAST BUSINESS NAPLES',
+      category: 'Bills',
+      counterparty: 'Comcast',
+      amountCents: -MONTHLY_COMCAST_CENTS,
+      createdAt: new Date(createdAt.getTime() + 8 * 3600_000),
+    })
+    rows.push({
+      description: 'TOAST TAB SUBSCRIPTION',
+      category: 'Software',
+      counterparty: 'Toast',
+      amountCents: -MONTHLY_TOAST_SUB_CENTS,
+      createdAt: new Date(createdAt.getTime() + 10 * 3600_000),
+    })
+  }
+
+  // Quarterly tax (4 times in the year)
+  for (let q = 0; q < 4; q++) {
+    const d = new Date(now.getFullYear(), q * 3, 15, 11, 0, 0, 0)
+    if (d.getTime() > now.getTime()) d.setFullYear(d.getFullYear() - 1)
+    rows.push({
+      description: 'FL DEPT OF REVENUE TAX',
+      category: 'Taxes',
+      counterparty: 'FL Dept of Revenue',
+      amountCents: -randBetween(q * 1000 + 50, 28000, 95000),
+      createdAt: d,
+    })
+    if (q % 2 === 1) {
+      rows.push({
+        description: 'IRS EFTPS QUARTERLY',
+        category: 'Taxes',
+        counterparty: 'IRS',
+        amountCents: -randBetween(q * 1000 + 51, 45000, 145000),
+        createdAt: new Date(d.getTime() + 86400_000),
+      })
+    }
+  }
+
+  return rows
+}
+
 function buildFillRows(
   count: number,
   offset = 0,
   catalog: CatalogRow[] = PERSONAL_MERCHANTS
 ) {
-  const rows: Array<{
-    description: string
-    category: string
-    counterparty: string
-    amountCents: number
-    createdAt: Date
-  }> = []
-
+  const rows: TxRow[] = []
   for (let i = 0; i < count; i++) {
     const idx = (i + offset) % catalog.length
     const [description, category, min, max, credit] = catalog[idx]
     const span = Math.max(1, max - min)
-    const jitter = ((i * 13) % 17) - 8
-    const raw = Math.max(min, min + ((i + offset) * 97 + jitter) % span)
+    const raw = min + ((i + offset) * 97) % span
+    const d = new Date()
+    d.setDate(d.getDate() - ((i + offset) % 365))
+    d.setHours(8 + (i % 10), (i * 7) % 60, 0, 0)
     rows.push({
       description,
       category,
       counterparty: description,
       amountCents: credit ? raw : -raw,
-      createdAt: dateInLastYear(i + offset, TARGET_TX_COUNT),
+      createdAt: d,
     })
   }
   return rows
@@ -290,7 +508,7 @@ async function stripInternalMarkers(userId: string) {
     )
 }
 
-async function jimmyNeedsRestaurantRebuild(userId: string, checkingId: number) {
+async function jimmyNeedsRebuild(userId: string, checkingId: number) {
   const stale = await db
     .select({ description: transaction.description })
     .from(transaction)
@@ -304,6 +522,19 @@ async function jimmyNeedsRestaurantRebuild(userId: string, checkingId: number) {
     .limit(1)
   if (stale[0]) return true
 
+  const gusto = await db
+    .select({ id: transaction.id })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        like(transaction.description, '%GUSTO%')
+      )
+    )
+    .limit(1)
+  if (gusto[0]) return true
+
   const credit = await db
     .select({ id: transaction.id })
     .from(transaction)
@@ -315,27 +546,13 @@ async function jimmyNeedsRestaurantRebuild(userId: string, checkingId: number) {
       )
     )
     .limit(1)
-  if (!credit[0]) return true
-
-  const naples = await db
-    .select({ description: transaction.description })
-    .from(transaction)
-    .where(
-      and(
-        eq(transaction.userId, userId),
-        eq(transaction.accountId, checkingId),
-        like(transaction.description, '%NAPLES%')
-      )
-    )
-    .limit(1)
-  return !naples[0]
+  return !credit[0]
 }
 
 async function countYearRows(userId: string, checkingId: number) {
   const since = new Date()
   since.setMonth(since.getMonth() - 12)
   since.setHours(0, 0, 0, 0)
-
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(transaction)
@@ -352,10 +569,7 @@ async function countYearRows(userId: string, checkingId: number) {
 async function fixJimmyTransferDescriptions(userId: string) {
   await db
     .update(transaction)
-    .set({
-      description: 'Transfer from Traditional IRA',
-      counterparty: 'Business Checking',
-    })
+    .set({ description: 'Transfer from Traditional IRA', counterparty: 'Business Checking' })
     .where(
       and(
         eq(transaction.userId, userId),
@@ -363,13 +577,9 @@ async function fixJimmyTransferDescriptions(userId: string) {
         like(transaction.description, 'Transfer from Business Checking%')
       )
     )
-
   await db
     .update(transaction)
-    .set({
-      description: 'Transfer from High-Yield Savings',
-      counterparty: 'Business Checking',
-    })
+    .set({ description: 'Transfer from High-Yield Savings', counterparty: 'Business Checking' })
     .where(
       and(
         eq(transaction.userId, userId),
@@ -377,13 +587,9 @@ async function fixJimmyTransferDescriptions(userId: string) {
         like(transaction.description, 'Transfer from Business Checking%')
       )
     )
-
   await db
     .update(transaction)
-    .set({
-      description: 'Transfer from High-Yield Savings',
-      counterparty: 'Business Checking',
-    })
+    .set({ description: 'Transfer from High-Yield Savings', counterparty: 'Business Checking' })
     .where(
       and(
         eq(transaction.userId, userId),
@@ -391,115 +597,6 @@ async function fixJimmyTransferDescriptions(userId: string) {
         like(transaction.description, 'Transfer from Business Checking%')
       )
     )
-}
-
-async function rewriteJimmyToBusinessStyle(userId: string, checkingId: number) {
-  const rows = await db
-    .select({
-      id: transaction.id,
-      description: transaction.description,
-    })
-    .from(transaction)
-    .where(
-      and(
-        eq(transaction.userId, userId),
-        eq(transaction.accountId, checkingId),
-        sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`,
-        sql`${transaction.type} <> 'transfer'`
-      )
-    )
-
-  const toRewrite = rows.filter((r) =>
-    PERSONAL_PATTERNS.some((p) =>
-      String(r.description || '')
-        .toUpperCase()
-        .includes(p.toUpperCase())
-    )
-  )
-
-  const targetCount = Math.floor(toRewrite.length * 0.75)
-  if (targetCount === 0) return
-
-  const pool = BUSINESS_MERCHANTS.filter((m) => !m[4])
-  const selected = toRewrite.slice(0, targetCount)
-
-  for (let i = 0; i < selected.length; i++) {
-    const [desc, category] = pool[i % pool.length]
-    await db
-      .update(transaction)
-      .set({
-        description: desc,
-        category,
-        counterparty: desc,
-      })
-      .where(eq(transaction.id, selected[i].id))
-  }
-}
-
-/**
- * Ensure exactly one mortgage + two insurance charges per month
- * with identical amounts every month. Removes any commercial rent
- * or old generic insurance rows first.
- */
-async function ensureJimmyMonthlyFixedCosts(userId: string, checkingId: number) {
-  // Strip any old rent / generic insurance so we don't double-count
-  await db
-    .delete(transaction)
-    .where(
-      and(
-        eq(transaction.userId, userId),
-        eq(transaction.accountId, checkingId),
-        or(
-          like(transaction.description, '%COMMERCIAL RENT%'),
-          like(transaction.description, '%GENERAL LIABILITY INS%'),
-          like(transaction.description, '%PROPERTY INSURANCE%'),
-          like(transaction.description, '%WORKER COMP INSURANCE%'),
-          like(transaction.description, '%WELLS FARGO HOME MORTGAGE%'),
-          like(transaction.description, '%STATE FARM%'),
-          like(transaction.description, '%PROGRESSIVE%')
-        )
-      )
-    )
-
-  const months = monthlyFixedDates()
-
-  for (const createdAt of months) {
-    // Mortgage — once per month, same amount
-    await db.insert(transaction).values({
-      userId,
-      accountId: checkingId,
-      amountCents: -MONTHLY_MORTGAGE_CENTS,
-      type: 'debit',
-      description: 'WELLS FARGO HOME MORTGAGE',
-      category: 'Housing',
-      counterparty: 'Wells Fargo Home Mortgage',
-      createdAt,
-    })
-
-    // State Farm — once per month, same amount
-    await db.insert(transaction).values({
-      userId,
-      accountId: checkingId,
-      amountCents: -MONTHLY_STATE_FARM_CENTS,
-      type: 'debit',
-      description: 'STATE FARM INSURANCE',
-      category: 'Insurance',
-      counterparty: 'State Farm',
-      createdAt: new Date(createdAt.getTime() + 2 * 60 * 60 * 1000),
-    })
-
-    // Progressive — once per month, same amount
-    await db.insert(transaction).values({
-      userId,
-      accountId: checkingId,
-      amountCents: -MONTHLY_PROGRESSIVE_CENTS,
-      type: 'debit',
-      description: 'PROGRESSIVE INSURANCE',
-      category: 'Insurance',
-      counterparty: 'Progressive',
-      createdAt: new Date(createdAt.getTime() + 4 * 60 * 60 * 1000),
-    })
-  }
 }
 
 async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
@@ -513,7 +610,6 @@ async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
         sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`
       )
     )
-
   const currentSum = Number(sumRows[0]?.total ?? 0)
   const needed = JIMMY_CHECKING_CENTS - currentSum
 
@@ -533,10 +629,7 @@ async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
     if (Number(existing[0].amountCents) === needed) return
     await db
       .update(transaction)
-      .set({
-        amountCents: needed,
-        type: needed >= 0 ? 'credit' : 'debit',
-      })
+      .set({ amountCents: needed, type: needed >= 0 ? 'credit' : 'debit' })
       .where(eq(transaction.id, existing[0].id))
   } else if (needed !== 0) {
     await db.insert(transaction).values({
@@ -557,16 +650,10 @@ async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
     .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
 }
 
-export async function applyJimmyChecking(
-  userId: string,
-  checkingId: number
-) {
+export async function applyJimmyChecking(userId: string, checkingId: number) {
   await db
     .update(bankAccount)
-    .set({
-      name: 'Business Checking',
-      balanceCents: JIMMY_CHECKING_CENTS,
-    })
+    .set({ name: 'Business Checking', balanceCents: JIMMY_CHECKING_CENTS })
     .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
 }
 
@@ -577,56 +664,65 @@ export async function ensureTenThousandHistory(
 ) {
   await stripInternalMarkers(userId)
 
-  if (opts?.restaurants && (await jimmyNeedsRestaurantRebuild(userId, checkingId))) {
-    await db
-      .delete(transaction)
-      .where(
-        and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId))
-      )
-  }
+  if (opts?.restaurants) {
+    // Full realistic rebuild when needed
+    if (await jimmyNeedsRebuild(userId, checkingId)) {
+      await db
+        .delete(transaction)
+        .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
 
-  const visible = await countYearRows(userId, checkingId)
-  const needed = Math.max(0, TARGET_TX_COUNT - visible)
+      const history = buildJimmyRealisticHistory()
+      const BATCH = 400
+      for (let i = 0; i < history.length; i += BATCH) {
+        const slice = history.slice(i, i + BATCH)
+        await db.insert(transaction).values(
+          slice.map((t) => ({
+            userId,
+            accountId: checkingId,
+            amountCents: t.amountCents,
+            type: t.amountCents >= 0 ? 'credit' : 'debit',
+            description: t.description,
+            category: t.category,
+            counterparty: t.counterparty,
+            createdAt: t.createdAt,
+          }))
+        )
+      }
+    }
 
-  if (needed > 0) {
-    const catalog = opts?.restaurants ? JIMMY_BUSINESS_CATALOG : PERSONAL_MERCHANTS
-    const insertCount = Math.min(needed, MAX_INSERTS_PER_RUN)
-    const history = buildFillRows(insertCount, visible, catalog)
-    const BATCH = 400
-    for (let i = 0; i < history.length; i += BATCH) {
-      const slice = history.slice(i, i + BATCH)
-      await db.insert(transaction).values(
-        slice.map((t) => ({
-          userId,
-          accountId: checkingId,
-          amountCents: t.amountCents,
-          type: t.amountCents >= 0 ? 'credit' : 'debit',
-          description: t.description,
-          category: t.category,
-          counterparty: t.counterparty,
-          createdAt: t.createdAt,
-        }))
-      )
+    await fixJimmyTransferDescriptions(userId)
+    await ensureJimmyOpeningBalance(userId, checkingId)
+  } else {
+    // Non-Jimmy large history (Dennis / Ana path uses other seeders)
+    const visible = await countYearRows(userId, checkingId)
+    const needed = Math.max(0, TARGET_TX_COUNT - visible)
+    if (needed > 0) {
+      const history = buildFillRows(Math.min(needed, MAX_INSERTS_PER_RUN), visible, PERSONAL_MERCHANTS)
+      const BATCH = 400
+      for (let i = 0; i < history.length; i += BATCH) {
+        const slice = history.slice(i, i + BATCH)
+        await db.insert(transaction).values(
+          slice.map((t) => ({
+            userId,
+            accountId: checkingId,
+            amountCents: t.amountCents,
+            type: t.amountCents >= 0 ? 'credit' : 'debit',
+            description: t.description,
+            category: t.category,
+            counterparty: t.counterparty,
+            createdAt: t.createdAt,
+          }))
+        )
+      }
     }
   }
 
-  if (opts?.restaurants) {
-    await fixJimmyTransferDescriptions(userId)
-    await rewriteJimmyToBusinessStyle(userId, checkingId)
-    await ensureJimmyMonthlyFixedCosts(userId, checkingId)
-    await ensureJimmyOpeningBalance(userId, checkingId)
-  }
-
   const count = await countYearRows(userId, checkingId)
-  return { count, target: TARGET_TX_COUNT, done: count >= TARGET_TX_COUNT }
+  return { count, target: TARGET_TX_COUNT, done: count >= Math.min(TARGET_TX_COUNT, 2500) }
 }
 
 async function seedMember(member: { id: string; name: string | null; email: string | null }) {
-  const accounts = await db
-    .select()
-    .from(bankAccount)
-    .where(eq(bankAccount.userId, member.id))
-
+  const accounts = await db.select().from(bankAccount).where(eq(bankAccount.userId, member.id))
   const jimmy = isJimmyMember(member.name, member.email)
 
   let checking = accounts.find((a) => a.type === 'checking')
@@ -644,18 +740,10 @@ async function seedMember(member: { id: string; name: string | null; email: stri
     checking = created
   }
 
-  if (jimmy) {
-    await applyJimmyChecking(member.id, checking.id)
-  }
+  if (jimmy) await applyJimmyChecking(member.id, checking.id)
 
-  const result = await ensureTenThousandHistory(member.id, checking.id, {
-    restaurants: jimmy,
-  })
-  return {
-    email: member.email,
-    count: result.count,
-    done: result.done,
-  }
+  const result = await ensureTenThousandHistory(member.id, checking.id, { restaurants: jimmy })
+  return { email: member.email, count: result.count, done: result.done }
 }
 
 export async function seedLargeHistoryForUser(
@@ -671,7 +759,6 @@ export async function seedLargeHistoryForNamedMembers() {
   const members = await db
     .select({ id: user.id, name: user.name, email: user.email })
     .from(user)
-
   const results: Array<{ email: string | null; count: number; done: boolean }> = []
   for (const member of members) {
     if (!shouldSeedLargeHistory(member.name, member.email)) continue
