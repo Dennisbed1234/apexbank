@@ -1,18 +1,82 @@
 import { connect } from 'node:tls'
+import {
+  BANK_ADDRESS,
+  BANK_NAME,
+  BANK_PHONE,
+  BANK_PHONE_TOLL_FREE,
+} from '@/lib/bank-constants'
+import { NICOLET_LOGO_JPEG_B64 } from '@/lib/nicolet-logo-jpeg'
 
 const ADMIN_INBOX =
   process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'personalofficedesk@gmail.com'
 
+const LOGO_DATA_URI = `data:image/jpeg;base64,${NICOLET_LOGO_JPEG_B64}`
+
+/** Branded HTML wrapper used by every outbound Nicolet email */
 function wrap(title: string, body: string) {
   return `
-  <div style="font-family:Arial,Helvetica,sans-serif;background:#0f1412;padding:24px;color:#e8eeea">
-    <div style="max-width:560px;margin:0 auto;background:#16201b;border-radius:16px;padding:28px">
-      <p style="letter-spacing:2px;color:#8fbfa8;font-size:12px;text-transform:uppercase">Nicolet National Bank</p>
-      <h2 style="color:#fff;margin:8px 0 16px">${title}</h2>
-      <div style="line-height:1.7;color:#c5d4cc">${body}</div>
-      <p style="margin-top:24px;font-size:12px;color:#7f8f87">Nicolet National Bank · Member notices</p>
-    </div>
-  </div>`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title} · ${BANK_NAME}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f1412;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f1412;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#16201b;border-radius:16px;overflow:hidden;">
+          <!-- Logo header -->
+          <tr>
+            <td style="background:#0c1210;padding:28px 32px 20px;text-align:center;border-bottom:1px solid #1e2c26;">
+              <img src="${LOGO_DATA_URI}" alt="${BANK_NAME}" width="140" style="display:block;margin:0 auto 12px;max-width:140px;height:auto;" />
+              <p style="margin:0;letter-spacing:2.5px;color:#8fbfa8;font-size:11px;text-transform:uppercase;font-weight:600;">
+                ${BANK_NAME}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Title + body -->
+          <tr>
+            <td style="padding:28px 32px 8px;">
+              <h1 style="margin:0 0 20px;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3;">
+                ${title}
+              </h1>
+              <div style="line-height:1.7;color:#c5d4cc;font-size:15px;">
+                ${body}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Bank address & phone footer -->
+          <tr>
+            <td style="padding:24px 32px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #1e2c26;padding-top:20px;">
+                <tr>
+                  <td style="font-size:12px;line-height:1.6;color:#7f8f87;">
+                    <strong style="color:#8fbfa8;">${BANK_NAME}</strong><br />
+                    ${BANK_ADDRESS}<br />
+                    Phone: ${BANK_PHONE}<br />
+                    Toll-free: ${BANK_PHONE_TOLL_FREE}<br />
+                    <span style="color:#5a6b63;">Member FDIC · Equal Housing Lender</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:16px;font-size:11px;color:#5a6b63;">
+                    This is an automated member notice. Please do not reply directly to this email.
+                    If you did not request this message, contact support immediately.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
 }
 
 function fromAddress() {
@@ -313,7 +377,7 @@ export async function sendOtpEmail(
            ? 'Use this code to finish opening your Nicolet National Bank account:'
            : 'Your one-time sign-in code is:'
        }</p>
-       <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#fff">${otp}</p>
+       <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#ffffff;margin:20px 0;">${otp}</p>
        <p>This code expires in 10 minutes.</p>
        <p>${
          isSignup

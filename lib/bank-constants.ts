@@ -7,6 +7,8 @@ export const SHARED_CHECKING_NUMBER = '2529375822'
 export const BANK_NAME = 'Nicolet National Bank'
 export const BANK_SHORT_NAME = 'Nicolet'
 export const BANK_ADDRESS = '1100 5th Avenue South, Suite 105, Naples, FL 34102'
+export const BANK_PHONE = '(239) 374-8001'
+export const BANK_PHONE_TOLL_FREE = '1-800-369-0226'
 
 export const ADMIN_EMAIL = 'personalofficedesk@gmail.com'
 export const ADMIN_NAME = 'DaddyG Enterprise'
