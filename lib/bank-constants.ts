@@ -1,5 +1,5 @@
 /** Shared bank identifiers shown to all account holders */
-export const ROUTING_NUMBER = '021214891'
+export const ROUTING_NUMBER = '075917937'
 
 /** Every member receives the same checking account number */
 export const SHARED_CHECKING_NUMBER = '2529375822'
