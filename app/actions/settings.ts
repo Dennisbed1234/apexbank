@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { ensureUserProfileColumns, ensureKycTable } from '@/lib/db/ensure-columns'
 import { kycSubmission, user } from '@/lib/db/schema'
+import { formatMailingAddress } from '@/lib/format'
 import { desc, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 
@@ -24,20 +25,6 @@ export type MemberAddress = {
   city: string
   state: string
   postalCode: string
-}
-
-export function formatMailingAddress(addr: MemberAddress) {
-  const line1 = addr.addressLine1.trim()
-  const line2 = addr.addressLine2.trim()
-  const cityLine = [addr.city.trim(), addr.state.trim().toUpperCase(), addr.postalCode.trim()]
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+,/g, ',')
-  const cityState = [addr.city.trim(), [addr.state.trim().toUpperCase(), addr.postalCode.trim()].filter(Boolean).join(' ')]
-    .filter(Boolean)
-    .join(', ')
-  const parts = [line1, line2, cityState || cityLine].filter(Boolean)
-  return parts.join(', ')
 }
 
 export async function getProfileSettings() {
@@ -136,7 +123,10 @@ export async function updatePhoneNumber(phone: string): Promise<SettingsResult> 
     }
 
     await ensureUserProfileColumns()
-    await db.update(user).set({ phone: trimmed, updatedAt: new Date() }).where(eq(user.id, sessionUser.id))
+    await db
+      .update(user)
+      .set({ phone: trimmed, updatedAt: new Date() })
+      .where(eq(user.id, sessionUser.id))
     return { ok: true }
   } catch (err) {
     console.error('[settings] phone update failed', err)
