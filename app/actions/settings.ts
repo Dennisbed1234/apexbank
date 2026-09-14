@@ -18,20 +18,62 @@ function isValidUsPhone(value: string) {
   return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
 }
 
+export type MemberAddress = {
+  addressLine1: string
+  addressLine2: string
+  city: string
+  state: string
+  postalCode: string
+}
+
+export function formatMailingAddress(addr: MemberAddress) {
+  const line1 = addr.addressLine1.trim()
+  const line2 = addr.addressLine2.trim()
+  const cityLine = [addr.city.trim(), addr.state.trim().toUpperCase(), addr.postalCode.trim()]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+,/g, ',')
+  const cityState = [addr.city.trim(), [addr.state.trim().toUpperCase(), addr.postalCode.trim()].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
+  const parts = [line1, line2, cityState || cityLine].filter(Boolean)
+  return parts.join(', ')
+}
+
 export async function getProfileSettings() {
   const sessionUser = await getSessionUser()
   await ensureUserProfileColumns()
 
   let phone = ''
+  let address: MemberAddress = {
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+  }
   try {
     const rows = await db
       .select({
         phone: user.phone,
+        addressLine1: user.addressLine1,
+        addressLine2: user.addressLine2,
+        city: user.city,
+        state: user.state,
+        postalCode: user.postalCode,
       })
       .from(user)
       .where(eq(user.id, sessionUser.id))
       .limit(1)
-    phone = rows[0]?.phone || ''
+    const row = rows[0]
+    phone = row?.phone || ''
+    address = {
+      addressLine1: row?.addressLine1 || '',
+      addressLine2: row?.addressLine2 || '',
+      city: row?.city || '',
+      state: row?.state || '',
+      postalCode: row?.postalCode || '',
+    }
   } catch (err) {
     console.error('[settings] profile lookup failed', err)
   }
@@ -77,6 +119,8 @@ export async function getProfileSettings() {
     name: sessionUser.name || 'Member',
     email: sessionUser.email || '',
     phone,
+    address,
+    mailingAddress: formatMailingAddress(address),
     kyc,
   }
 }
@@ -92,12 +136,64 @@ export async function updatePhoneNumber(phone: string): Promise<SettingsResult> 
     }
 
     await ensureUserProfileColumns()
-
-    await db.update(user).set({ phone: trimmed }).where(eq(user.id, sessionUser.id))
+    await db.update(user).set({ phone: trimmed, updatedAt: new Date() }).where(eq(user.id, sessionUser.id))
     return { ok: true }
   } catch (err) {
     console.error('[settings] phone update failed', err)
     return { ok: false, error: 'Could not save phone number. Please try again.' }
+  }
+}
+
+export async function updateProfile(input: {
+  phone: string
+  addressLine1: string
+  addressLine2?: string
+  city: string
+  state: string
+  postalCode: string
+}): Promise<SettingsResult> {
+  try {
+    const sessionUser = await getSessionUser()
+    const phone = String(input.phone || '').trim()
+    const addressLine1 = String(input.addressLine1 || '').trim()
+    const addressLine2 = String(input.addressLine2 || '').trim()
+    const city = String(input.city || '').trim()
+    const state = String(input.state || '').trim().toUpperCase()
+    const postalCode = String(input.postalCode || '').trim()
+
+    if (phone && !isValidUsPhone(phone)) {
+      return { ok: false, error: 'Enter a valid U.S. phone number (10 digits).' }
+    }
+    if (!addressLine1) {
+      return { ok: false, error: 'Street address is required.' }
+    }
+    if (!city) {
+      return { ok: false, error: 'City is required.' }
+    }
+    if (!/^[A-Z]{2}$/.test(state)) {
+      return { ok: false, error: 'Use a 2-letter state code, like FL.' }
+    }
+    if (!/^\d{5}(-\d{4})?$/.test(postalCode)) {
+      return { ok: false, error: 'Enter a valid ZIP code.' }
+    }
+
+    await ensureUserProfileColumns()
+    await db
+      .update(user)
+      .set({
+        phone: phone || null,
+        addressLine1,
+        addressLine2: addressLine2 || null,
+        city,
+        state,
+        postalCode,
+        updatedAt: new Date(),
+      })
+      .where(eq(user.id, sessionUser.id))
+    return { ok: true }
+  } catch (err) {
+    console.error('[settings] profile update failed', err)
+    return { ok: false, error: 'Could not save profile. Please try again.' }
   }
 }
 
