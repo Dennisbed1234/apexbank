@@ -171,7 +171,8 @@ export async function buildMemberStatementPdf(input: {
       : formatCurrency(closingCents)
 
   const periodLabel = `${formatUsDate(since)} - ${formatUsDate(until)}`
-  const filename = `nicolet-checking-${months}mo-${until.toISOString().slice(0, 10)}.pdf`
+  const monthWord = months === 1 ? '1 Month' : `${months} Month`
+  const filename = `Nicolet Checking ${monthWord} Statement.pdf`
 
   const statementAccounts = checking
     ? [
