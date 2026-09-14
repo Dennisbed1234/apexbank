@@ -33,10 +33,11 @@ function jpegBytes() {
 }
 
 function pageStream(lines: string[]) {
-  const logoW = 168
+  // Small header logo — about 1/3 the previous size
+  const logoW = 56
   const logoH = (logoW * NICOLET_LOGO_HEIGHT) / NICOLET_LOGO_WIDTH
-  const logoY = 792 - 28 - logoH
-  const textY = logoY - 18
+  const logoY = 792 - 20 - logoH
+  const textY = logoY - 14
   const cmds = [
     'q',
     `${logoW.toFixed(2)} 0 0 ${logoH.toFixed(2)} 36 ${logoY.toFixed(2)} cm`,
