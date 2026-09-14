@@ -27,7 +27,7 @@ export async function emailMyStatement(
 
     const sent = await sendMailWithAttachment(
       session.user.email,
-      `Your Apex Bank ${months}-month statement (PDF)`,
+      `Your Nicolet National Bank ${months}-month statement (PDF)`,
       `<p>Hi ${session.user.name || 'there'},</p>
        <p>Your ${months}-month account statement is attached.</p>
        <p>This PDF lists all ${totalInPeriod} posted transactions in the statement period.</p>`,

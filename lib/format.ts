@@ -84,7 +84,7 @@ export function formatMailingAddress(addr: {
 }
 
 export function transactionReference(id: number) {
-  return `APX${String(id).padStart(10, '0')}`
+  return `NNB${String(id).padStart(10, '0')}`
 }
 
 export function lastFour(num: string) {
