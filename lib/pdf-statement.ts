@@ -34,6 +34,7 @@ export type StatementMonth = {
 
 export function buildStatementPdf(input: {
   memberName: string
+  mailingAddress?: string
   routingNumber: string
   bankAddress: string
   periodLabel: string
@@ -72,6 +73,7 @@ export function buildStatementPdf(input: {
     `Generated: ${input.generatedAt} CT`,
     `Statement period: ${input.periodLabel} CT`,
     `Account name: ${input.memberName}`,
+    `Mailing address: ${input.mailingAddress || 'Not on file'}`,
     `Routing number: ${input.routingNumber}`,
     '',
     'Accounts (current balances)',
