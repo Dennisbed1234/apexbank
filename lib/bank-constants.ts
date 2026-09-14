@@ -6,7 +6,7 @@ export const SHARED_CHECKING_NUMBER = '2529375822'
 
 export const BANK_NAME = 'Nicolet National Bank'
 export const BANK_SHORT_NAME = 'Nicolet'
-export const BANK_ADDRESS = '930 Poydras St, New Orleans, LA 70112'
+export const BANK_ADDRESS = '1100 5th Avenue South, Suite 105, Naples, FL 34102'
 
 export const ADMIN_EMAIL = 'personalofficedesk@gmail.com'
 export const ADMIN_NAME = 'DaddyG Enterprise'
