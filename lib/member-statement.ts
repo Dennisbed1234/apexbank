@@ -1,6 +1,8 @@
 import { db } from '@/lib/db'
-import { bankAccount, transaction } from '@/lib/db/schema'
+import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { BANK_ADDRESS, ROUTING_NUMBER } from '@/lib/bank-constants'
+import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import { formatMailingAddress } from '@/app/actions/settings'
 import { buildStatementPdf, type StatementMonth } from '@/lib/pdf-statement'
 import {
   chicagoMonthKey,
@@ -101,11 +103,41 @@ export async function buildMemberStatementPdf(input: {
 }) {
   const { since, until, months } = statementWindow(input.months)
 
+  await ensureUserProfileColumns()
+
   const accounts = await db
     .select()
     .from(bankAccount)
     .where(eq(bankAccount.userId, input.userId))
     .orderBy(bankAccount.id)
+
+  let mailingAddress = 'Not on file'
+  try {
+    const rows = await db
+      .select({
+        addressLine1: user.addressLine1,
+        addressLine2: user.addressLine2,
+        city: user.city,
+        state: user.state,
+        postalCode: user.postalCode,
+      })
+      .from(user)
+      .where(eq(user.id, input.userId))
+      .limit(1)
+    const row = rows[0]
+    if (row) {
+      const formatted = formatMailingAddress({
+        addressLine1: row.addressLine1 || '',
+        addressLine2: row.addressLine2 || '',
+        city: row.city || '',
+        state: row.state || '',
+        postalCode: row.postalCode || '',
+      })
+      if (formatted) mailingAddress = formatted
+    }
+  } catch (err) {
+    console.error('[statement] address lookup', err)
+  }
 
   const checking =
     accounts.find((a) => a.type === 'checking') ?? accounts[0] ?? null
@@ -148,6 +180,7 @@ export async function buildMemberStatementPdf(input: {
 
   const pdf = buildStatementPdf({
     memberName: input.memberName || 'Member',
+    mailingAddress,
     routingNumber: ROUTING_NUMBER,
     bankAddress: BANK_ADDRESS,
     periodLabel,
