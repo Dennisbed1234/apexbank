@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import {
   buildMemberStatementPdf,
   clampStatementMonths,
+  parseMonthKey,
 } from '@/lib/member-statement'
 
 export const maxDuration = 60
@@ -15,15 +16,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const months = clampStatementMonths(
-      new URL(req.url).searchParams.get('months')
-    )
+    const url = new URL(req.url)
+    const monthParam = url.searchParams.get('month') || ''
+    const monthKey = parseMonthKey(monthParam) ? monthParam : undefined
+    const months = monthKey
+      ? 1
+      : clampStatementMonths(url.searchParams.get('months'))
 
     const { pdf, filename } = await buildMemberStatementPdf({
       userId: session.user.id,
       memberName: session.user.name || 'Member',
       memberEmail: session.user.email || '',
       months,
+      monthKey,
     })
 
     return new NextResponse(Buffer.from(pdf), {

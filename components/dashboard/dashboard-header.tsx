@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FileText, LogOut, Mail, Settings, Shield, User } from 'lucide-react'
@@ -11,7 +11,20 @@ import { ApexLogo } from '@/components/apex-logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ADMIN_EMAIL, BANK_NAME } from '@/lib/bank-constants'
 
-const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
+function buildMonthOptions(count = 12) {
+  const out: Array<{ key: string; label: string }> = []
+  const now = new Date()
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 15)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric',
+    }).format(d)
+    out.push({ key, label })
+  }
+  return out
+}
 
 export function DashboardHeader({
   name,
@@ -24,11 +37,15 @@ export function DashboardHeader({
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [emailing, setEmailing] = useState(false)
-  const [months, setMonths] = useState(12)
+  const monthOptions = useMemo(() => buildMonthOptions(12), [])
+  const [monthKey, setMonthKey] = useState(monthOptions[0]?.key || '')
   const menuRef = useRef<HTMLDivElement>(null)
   const safeName = name?.trim() || 'Account'
   const safeEmail = email?.trim() || ''
   const isAdmin = safeEmail.toLowerCase() === ADMIN_EMAIL
+  const selectedLabel =
+    monthOptions.find((m) => m.key === monthKey)?.label || 'this month'
+  const monthNameOnly = selectedLabel.replace(/\s+\d{4}$/, '')
 
   const initials = safeName
     .split(' ')
@@ -85,9 +102,10 @@ export function DashboardHeader({
     setOpen(false)
     setDownloading(true)
     try {
-      const res = await fetch(`/api/statement?months=${months}`, {
-        credentials: 'include',
-      })
+      const res = await fetch(
+        `/api/statement?month=${encodeURIComponent(monthKey)}`,
+        { credentials: 'include' }
+      )
       if (!res.ok) {
         toast.error('Could not download statement')
         return
@@ -96,12 +114,12 @@ export function DashboardHeader({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `nicolet-${months}mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
+      a.download = `${BANK_NAME} ${monthNameOnly} Statement.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      toast.success(`${months}-month statement downloaded`)
+      toast.success(`${monthNameOnly} statement downloaded`)
     } catch {
       toast.error('Download failed. Try again.')
     } finally {
@@ -113,12 +131,14 @@ export function DashboardHeader({
     setOpen(false)
     setEmailing(true)
     try {
-      const result = await emailMyStatement(months)
+      const result = await emailMyStatement(monthKey)
       if (!result.ok) {
         toast.error(result.error)
         return
       }
-      toast.success(`${months}-month statement emailed to ${safeEmail || 'your inbox'}`)
+      toast.success(
+        `${result.title || monthNameOnly + ' statement'} emailed to ${safeEmail || 'your inbox'}`
+      )
     } catch {
       toast.error('Could not email statement.')
     } finally {
@@ -138,28 +158,26 @@ export function DashboardHeader({
 
         <div className="relative" ref={menuRef}>
           <button
+            type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex h-9 items-center gap-2 rounded-md px-2 hover:bg-accent"
+            className="flex items-center gap-2 rounded-full border border-border bg-card px-2 py-1.5 text-sm hover:bg-accent"
           >
             <Avatar className="size-7">
-              <AvatarFallback className="text-xs font-semibold">
-                {initials || 'U'}
-              </AvatarFallback>
+              <AvatarFallback className="text-xs">{initials}</AvatarFallback>
             </Avatar>
-            <span className="hidden text-sm font-medium text-foreground sm:inline">
+            <span className="hidden max-w-[140px] truncate sm:inline">
               {safeName}
             </span>
           </button>
 
           {open && (
-            <div className="absolute right-0 z-50 mt-2 w-64 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
-              <div className="px-2 py-1.5">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">{safeName}</span>
-                  <span className="truncate text-xs text-muted-foreground">{safeEmail}</span>
-                </div>
+            <div className="absolute right-0 mt-2 w-64 rounded-lg border border-border bg-background p-1.5 shadow-lg">
+              <div className="border-b border-border px-2 py-2">
+                <p className="truncate text-sm font-medium">{safeName}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {safeEmail}
+                </p>
               </div>
-              <div className="my-1 h-px bg-border" />
               <Link
                 href="/dashboard/profile"
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
@@ -176,16 +194,16 @@ export function DashboardHeader({
                 <Settings className="size-4" />
                 Settings
               </Link>
-              <label className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm">
-                <span>Statement period</span>
+              <label className="flex w-full flex-col gap-1 rounded-md px-2 py-1.5 text-sm">
+                <span className="text-muted-foreground">Statement month</span>
                 <select
-                  value={months}
-                  onChange={(e) => setMonths(Number(e.target.value))}
-                  className="rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+                  value={monthKey}
+                  onChange={(e) => setMonthKey(e.target.value)}
+                  className="rounded-md border border-border bg-background px-1.5 py-1 text-xs"
                 >
-                  {PERIODS.map((n) => (
-                    <option key={n} value={n}>
-                      {n} month{n === 1 ? '' : 's'}
+                  {monthOptions.map((m) => (
+                    <option key={m.key} value={m.key}>
+                      {m.label}
                     </option>
                   ))}
                 </select>
@@ -197,7 +215,9 @@ export function DashboardHeader({
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
               >
                 <FileText className="size-4" />
-                {downloading ? 'Preparing PDF…' : `Download ${months}-month PDF`}
+                {downloading
+                  ? 'Preparing PDF…'
+                  : `Download ${monthNameOnly} statement`}
               </button>
               <button
                 type="button"
@@ -206,7 +226,9 @@ export function DashboardHeader({
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
               >
                 <Mail className="size-4" />
-                {emailing ? 'Emailing PDF…' : `Email ${months}-month PDF`}
+                {emailing
+                  ? 'Emailing PDF…'
+                  : `Email ${monthNameOnly} statement`}
               </button>
               {isAdmin && (
                 <Link

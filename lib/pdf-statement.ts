@@ -32,7 +32,6 @@ function jpegBytes() {
   return Buffer.from(NICOLET_LOGO_JPEG_B64, 'base64')
 }
 
-/** Full-width ledger column anchors (letter page 612pt, 36pt margins). */
 const COL = {
   date: 36,
   desc: 108,
@@ -71,14 +70,11 @@ function pageStream(lines: PdfLine[]) {
       const font = line.bold ? '/F2 10 Tf' : '/F1 10 Tf'
       cmds.push('BT', font, `${COL.date} ${y.toFixed(2)} Td`, `(${escapePdf(line.text)}) Tj`, 'ET')
     } else {
-      // Four real columns across the page — amount & balance right-aligned to anchors
       const font = line.bold ? '/F2 10 Tf' : '/F1 10 Tf'
       const date = clip(line.date, 12)
       const desc = clip(line.description, 48)
       const amount = toAscii(line.amount)
       const balance = toAscii(line.balance)
-
-      // Approximate right-align: shift left by ~5.5pt per character at 10pt Helvetica
       const amountX = COL.amount - amount.length * 5.5
       const balanceX = COL.balance - balance.length * 5.5
 
@@ -128,6 +124,8 @@ export function buildStatementPdf(input: {
   bankAddress: string
   periodLabel: string
   months?: number
+  /** e.g. "Nicolet National Bank August Statement" */
+  statementTitle?: string
   accounts: Array<{ name: string; type: string; lastFour: string; balanceLabel: string }>
   monthSections: StatementMonth[]
   generatedAt: string
@@ -137,6 +135,11 @@ export function buildStatementPdf(input: {
   lastMonthClosingLabel: string
 }): Uint8Array {
   const months = input.months ?? 12
+  const title =
+    input.statementTitle ||
+    (months === 1
+      ? 'Nicolet National Bank Statement'
+      : `Nicolet National Bank ${months} Month Statement`)
 
   const body: PdfLine[] = []
   for (const month of input.monthSections) {
@@ -189,8 +192,8 @@ export function buildStatementPdf(input: {
   const header: PdfLine[] = [
     { kind: 'text', text: input.bankAddress },
     { kind: 'text', text: '' },
-    { kind: 'text', text: 'BUSINESS CHECKING STATEMENT', bold: true },
-    { kind: 'text', text: `${months}-month period  ${input.periodLabel}` },
+    { kind: 'text', text: title.toUpperCase(), bold: true },
+    { kind: 'text', text: `Statement period  ${input.periodLabel}` },
     { kind: 'text', text: `Generated ${input.generatedAt} CT` },
     { kind: 'text', text: '' },
     { kind: 'text', text: `Account holder    ${input.memberName}`, bold: true },
@@ -205,7 +208,7 @@ export function buildStatementPdf(input: {
           kind: 'text',
           text: `Account           ${account.name}  ****${account.lastFour}`,
         }
-      : { kind: 'text', text: 'Account           Business Checking' },
+      : { kind: 'text', text: 'Account           Checking' },
     account
       ? { kind: 'text', text: `Current balance   ${account.balanceLabel}` }
       : { kind: 'text', text: '' },
@@ -213,7 +216,7 @@ export function buildStatementPdf(input: {
     { kind: 'text', text: `Posted items      ${input.totalInPeriod}` },
     { kind: 'text', text: `Beginning balance ${input.periodOpeningLabel}` },
     { kind: 'text', text: `Ending balance    ${input.periodClosingLabel}` },
-    { kind: 'text', text: 'Each running balance = prior balance + that item.' },
+    { kind: 'text', text: 'Each running balance equals prior balance plus that item.' },
   ]
 
   const footer: PdfLine[] = [
@@ -221,7 +224,7 @@ export function buildStatementPdf(input: {
     { kind: 'text', text: `End of statement. ${input.totalInPeriod} posted items.` },
     {
       kind: 'text',
-      text: `Final ending balance ${input.lastMonthClosingLabel} equals current balance ${input.periodClosingLabel}.`,
+      text: `Final ending balance ${input.lastMonthClosingLabel}.`,
     },
     { kind: 'text', text: 'Dates use Central Time. Member FDIC.' },
   ]
