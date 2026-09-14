@@ -1,21 +1,29 @@
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
-import { buildMemberStatementPdf } from '@/lib/member-statement'
+import {
+  buildMemberStatementPdf,
+  clampStatementMonths,
+} from '@/lib/member-statement'
 
 export const maxDuration = 60
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await auth.api.getSession({ headers: await headers() })
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const months = clampStatementMonths(
+      new URL(req.url).searchParams.get('months')
+    )
+
     const { pdf, filename } = await buildMemberStatementPdf({
       userId: session.user.id,
       memberName: session.user.name || 'Member',
       memberEmail: session.user.email || '',
+      months,
     })
 
     return new NextResponse(Buffer.from(pdf), {

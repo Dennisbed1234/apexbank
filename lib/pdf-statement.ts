@@ -26,11 +26,13 @@ export function buildStatementPdf(input: {
   routingNumber: string
   bankAddress: string
   periodLabel: string
+  months?: number
   accounts: Array<{ name: string; type: string; lastFour: string; balanceLabel: string }>
   transactions: Array<{ postedAt: string; description: string; amountLabel: string }>
   generatedAt: string
   totalInPeriod: number
 }): Uint8Array {
+  const months = input.months ?? 12
   const shown = input.transactions.map((t) => {
     const desc =
       t.description.length > 40 ? t.description.slice(0, 37) + '...' : t.description
@@ -38,7 +40,7 @@ export function buildStatementPdf(input: {
   })
 
   const header = [
-    'Apex Bank - 12-Month Account Statement',
+    `Apex Bank - ${months}-Month Account Statement`,
     `Bank address: ${input.bankAddress}`,
     `Generated: ${input.generatedAt} CT`,
     `Statement period: ${input.periodLabel} CT`,

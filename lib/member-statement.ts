@@ -10,20 +10,28 @@ import {
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { and, desc, eq, gte } from 'drizzle-orm'
 
-export function statementWindow() {
+export function clampStatementMonths(value: unknown) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 12
+  return Math.min(12, Math.max(1, Math.round(n)))
+}
+
+export function statementWindow(months = 12) {
+  const span = clampStatementMonths(months)
   const since = new Date()
-  since.setMonth(since.getMonth() - 12)
+  since.setMonth(since.getMonth() - span)
   since.setHours(0, 0, 0, 0)
   const until = new Date()
-  return { since, until }
+  return { since, until, months: span }
 }
 
 export async function buildMemberStatementPdf(input: {
   userId: string
   memberName: string
   memberEmail?: string
+  months?: number
 }) {
-  const { since, until } = statementWindow()
+  const { since, until, months } = statementWindow(input.months)
 
   const accounts = await db
     .select()
@@ -40,13 +48,14 @@ export async function buildMemberStatementPdf(input: {
   const txs = raw.filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
 
   const periodLabel = `${formatStatementStamp(since)} - ${formatStatementStamp(until)}`
-  const filename = `apex-12mo-statement-${until.toISOString().slice(0, 10)}.pdf`
+  const filename = `apex-${months}mo-statement-${until.toISOString().slice(0, 10)}.pdf`
 
   const pdf = buildStatementPdf({
     memberName: input.memberName || 'Member',
     routingNumber: ROUTING_NUMBER,
     bankAddress: BANK_ADDRESS,
     periodLabel,
+    months,
     accounts: accounts.map((a) => ({
       name: a.name,
       type: a.type,
@@ -62,5 +71,5 @@ export async function buildMemberStatementPdf(input: {
     totalInPeriod: txs.length,
   })
 
-  return { pdf, filename, totalInPeriod: txs.length }
+  return { pdf, filename, totalInPeriod: txs.length, months }
 }
