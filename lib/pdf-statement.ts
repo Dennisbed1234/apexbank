@@ -6,8 +6,13 @@ import {
   NICOLET_LOGO_WIDTH,
 } from '@/lib/nicolet-logo-jpeg'
 
+/** Map common smart punctuation to ASCII so names like Jimmy P's stay intact. */
 function toAscii(value: string) {
   return String(value || '')
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
     .replace(/[^\x20-\x7E]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -70,14 +75,20 @@ export type StatementMonth = {
   transactions: StatementLine[]
 }
 
+/** Single signed amount column for a cleaner ledger. */
+function amountLabel(line: StatementLine) {
+  if (line.depositLabel) return line.depositLabel
+  if (line.withdrawalLabel) return line.withdrawalLabel
+  return ''
+}
+
 function ledgerRow(line: StatementLine) {
   return [
     clip(line.date, 10),
-    clip(line.description, 26),
-    clip(line.depositLabel || '', 12).padStart(12),
-    clip(line.withdrawalLabel || '', 12).padStart(12),
+    clip(line.description, 34),
+    clip(amountLabel(line), 12).padStart(12),
     clip(line.balanceLabel, 14).padStart(14),
-  ].join(' ')
+  ].join('  ')
 }
 
 export function buildStatementPdf(input: {
@@ -98,11 +109,10 @@ export function buildStatementPdf(input: {
   const months = input.months ?? 12
   const colHead = [
     clip('Date', 10),
-    clip('Description', 26),
-    '    Deposits',
-    ' Withdrawals',
-    '       Balance',
-  ].join(' ')
+    clip('Description', 34),
+    clip('Amount', 12).padStart(12),
+    clip('Balance', 14).padStart(14),
+  ].join('  ')
 
   const body: string[] = []
   for (const month of input.monthSections) {
@@ -110,18 +120,15 @@ export function buildStatementPdf(input: {
     body.push(month.label.toUpperCase())
     body.push(`Beginning balance                         ${month.beginningLabel}`)
     body.push(colHead)
-    body.push('-'.repeat(78))
     if (month.transactions.length === 0) {
       body.push('No posted items this month.')
     } else {
       for (const t of month.transactions) body.push(ledgerRow(t))
     }
-    body.push('-'.repeat(78))
     body.push(`Total deposits                            ${month.creditsLabel}`)
     body.push(`Total withdrawals                         ${month.debitsLabel}`)
     body.push(`Posted items                              ${month.count}`)
     body.push(`Ending balance                            ${month.closingLabel}`)
-    body.push('Ending = beginning + deposits + withdrawals')
   }
 
   const account = input.accounts[0]
@@ -153,7 +160,7 @@ export function buildStatementPdf(input: {
   ]
 
   const all = [...header, ...body, ...footer]
-  const PER = 40
+  const PER = 42
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) {
     const chunk = all.slice(i, i + PER)
