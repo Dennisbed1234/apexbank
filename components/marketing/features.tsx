@@ -12,7 +12,7 @@ const features = [
   {
     icon: Zap,
     title: 'Instant transfers',
-    body: 'Move money between checking, savings, and retirement in real time — no waiting days for it to clear.',
+    body: 'Move money between checking, savings, and retirement in real time. No waiting days for it to clear.',
   },
   {
     icon: PiggyBank,
