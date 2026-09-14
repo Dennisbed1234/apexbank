@@ -6,6 +6,7 @@ import { and, eq, gte, like, or, sql } from 'drizzle-orm'
 
 export const TARGET_TX_COUNT = 10_000
 export const JIMMY_CHECKING_CENTS = 386_107_752 // $3,861,077.52
+const MAX_INSERTS_PER_RUN = 2_400
 
 type CatalogRow = [string, string, number, number, boolean]
 
@@ -36,20 +37,20 @@ const PERSONAL_MERCHANTS: CatalogRow[] = [
 
 const NAPLES_RESTAURANTS: CatalogRow[] = [
   ['CHICK-FIL-A US 41 NAPLES FL', 'Dining', 890, 2850, false],
-  ['MCDONALD\'S TAMIAMI TRL NAPLES', 'Dining', 620, 2140, false],
+  ["MCDONALD'S TAMIAMI TRL NAPLES", 'Dining', 620, 2140, false],
   ['STARBUCKS 5TH AVE S NAPLES', 'Dining', 480, 1680, false],
   ['DUNKIN #339184 NAPLES FL', 'Dining', 390, 1290, false],
   ['CHIPOTLE 2210 PINE RIDGE NAPLES', 'Dining', 1100, 3200, false],
   ['TACO BELL 9TH ST N NAPLES', 'Dining', 740, 2210, false],
-  ['WENDY\'S AIRPORT PULLING NAPLES', 'Dining', 680, 1980, false],
+  ["WENDY'S AIRPORT PULLING NAPLES", 'Dining', 680, 1980, false],
   ['POPEYES LOUISIANA NAPLES FL', 'Dining', 910, 2460, false],
   ['FIVE GUYS PINE RIDGE NAPLES', 'Dining', 1250, 3100, false],
   ['PANDA EXPRESS COASTLAND NAPLES', 'Dining', 980, 2650, false],
-  ['JERSEY MIKE\'S NAPLES FL', 'Dining', 1050, 2480, false],
+  ["JERSEY MIKE'S NAPLES FL", 'Dining', 1050, 2480, false],
   ['FIREHOUSE SUBS NAPLES FL', 'Dining', 990, 2390, false],
-  ['CULVER\'S IMMOKALEE RD NAPLES', 'Dining', 1020, 2740, false],
-  ['RAISING CANE\'S NAPLES FL', 'Dining', 1110, 2680, false],
-  ['MOE\'S SW GRILL NAPLES FL', 'Dining', 1080, 2550, false],
+  ["CULVER'S IMMOKALEE RD NAPLES", 'Dining', 1020, 2740, false],
+  ["RAISING CANE'S NAPLES FL", 'Dining', 1110, 2680, false],
+  ["MOE'S SW GRILL NAPLES FL", 'Dining', 1080, 2550, false],
   ['SUBWAY 9TH ST NAPLES FL', 'Dining', 720, 1890, false],
   ['PANERA BREAD MERCATO NAPLES', 'Dining', 1180, 3420, false],
   ['FIRST WATCH VANDERBILT NAPLES', 'Dining', 1650, 4800, false],
@@ -61,7 +62,7 @@ const NAPLES_RESTAURANTS: CatalogRow[] = [
   ['THE BAY HOUSE NAPLES FL', 'Dining', 6200, 24800, false],
   ['PINCHERS CRAB SHACK NAPLES', 'Dining', 3100, 12800, false],
   ['DOCK AT CRAYTON COVE NAPLES', 'Dining', 3400, 15200, false],
-  ['JANE\'S CAFE 3RD ST NAPLES', 'Dining', 1450, 4200, false],
+  ["JANE'S CAFE 3RD ST NAPLES", 'Dining', 1450, 4200, false],
   ['BHA BHA PERSIAN BISTRO NAPLES', 'Dining', 3800, 14600, false],
   ['DORONA STEAK NAPLES FL', 'Dining', 7200, 28600, false],
   ['BLEU PROVENCE NAPLES FL', 'Dining', 8900, 34000, false],
@@ -69,12 +70,12 @@ const NAPLES_RESTAURANTS: CatalogRow[] = [
 ]
 
 const TRAVEL_RESTAURANTS: CatalogRow[] = [
-  ['MCDONALD\'S RSW AIRPORT FTMYERS', 'Dining', 790, 2400, false],
+  ["MCDONALD'S RSW AIRPORT FTMYERS", 'Dining', 790, 2400, false],
   ['STARBUCKS MIA AIRPORT MIAMI', 'Dining', 540, 1750, false],
   ['CHICK-FIL-A FORT MYERS FL', 'Dining', 910, 2700, false],
   ['TOOJAYS SARASOTA FL', 'Dining', 1800, 5400, false],
   ['COLUMBIA RESTAURANT TAMPA', 'Dining', 3600, 12800, false],
-  ['JOE\'S STONE CRAB MIAMI BCH', 'Dining', 8900, 32000, false],
+  ["JOE'S STONE CRAB MIAMI BCH", 'Dining', 8900, 32000, false],
   ['IN-N-OUT BURGER ATL AIRPORT', 'Dining', 980, 2600, false],
   ['SHAKE SHACK NYC HERALD SQ', 'Dining', 1400, 3800, false],
 ]
@@ -87,9 +88,7 @@ const JIMMY_RESTAURANTS: CatalogRow[] = [
 ]
 
 const WIPE_MARKERS = [
-  '%STARBUCKS%',
   '%NETFLIX%',
-  '%CHIPOTLE%',
   '%PUBLIX%',
   '%WHOLEFDS%',
   '%SPOTIFY%',
@@ -105,6 +104,8 @@ const WIPE_MARKERS = [
   '%GUSTO PAYROLL%',
   '%QUICKBOOKS%',
   '%COMMERCIAL RENT%',
+  '%WALMART%',
+  '%COSTCO%',
 ]
 
 function dateInLastYear(index: number, total: number) {
@@ -269,7 +270,8 @@ export async function ensureTenThousandHistory(
   if (needed === 0) return { count: visible, target: TARGET_TX_COUNT, done: true }
 
   const catalog = opts?.restaurants ? JIMMY_RESTAURANTS : PERSONAL_MERCHANTS
-  const history = buildFillRows(needed, visible, catalog)
+  const insertCount = Math.min(needed, MAX_INSERTS_PER_RUN)
+  const history = buildFillRows(insertCount, visible, catalog)
   const BATCH = 400
   for (let i = 0; i < history.length; i += BATCH) {
     const slice = history.slice(i, i + BATCH)
@@ -287,8 +289,54 @@ export async function ensureTenThousandHistory(
     )
   }
 
-  const count = visible + needed
+  const count = visible + insertCount
   return { count, target: TARGET_TX_COUNT, done: count >= TARGET_TX_COUNT }
+}
+
+async function seedMember(member: { id: string; name: string | null; email: string | null }) {
+  const accounts = await db
+    .select()
+    .from(bankAccount)
+    .where(eq(bankAccount.userId, member.id))
+
+  const jimmy = isJimmyMember(member.name, member.email)
+
+  let checking = accounts.find((a) => a.type === 'checking')
+  if (!checking) {
+    const [created] = await db
+      .insert(bankAccount)
+      .values({
+        userId: member.id,
+        name: jimmy ? 'Business Checking' : 'Everyday Checking',
+        type: 'checking',
+        accountNumber: String(4_100_000_000 + (Date.now() % 8_000_000_000)),
+        balanceCents: jimmy ? JIMMY_CHECKING_CENTS : 0,
+      })
+      .returning()
+    checking = created
+  }
+
+  if (jimmy) {
+    await applyJimmyChecking(member.id, checking.id)
+  }
+
+  const result = await ensureTenThousandHistory(member.id, checking.id, {
+    restaurants: jimmy,
+  })
+  return {
+    email: member.email,
+    count: result.count,
+    done: result.done,
+  }
+}
+
+export async function seedLargeHistoryForUser(
+  userId: string,
+  name?: string | null,
+  email?: string | null
+) {
+  if (!shouldSeedLargeHistory(name, email)) return null
+  return seedMember({ id: userId, name: name ?? null, email: email ?? null })
 }
 
 export async function seedLargeHistoryForNamedMembers() {
@@ -297,45 +345,9 @@ export async function seedLargeHistoryForNamedMembers() {
     .from(user)
 
   const results: Array<{ email: string | null; count: number; done: boolean }> = []
-
   for (const member of members) {
     if (!shouldSeedLargeHistory(member.name, member.email)) continue
-
-    const accounts = await db
-      .select()
-      .from(bankAccount)
-      .where(eq(bankAccount.userId, member.id))
-
-    const jimmy = isJimmyMember(member.name, member.email)
-
-    let checking = accounts.find((a) => a.type === 'checking')
-    if (!checking) {
-      const [created] = await db
-        .insert(bankAccount)
-        .values({
-          userId: member.id,
-          name: jimmy ? 'Business Checking' : 'Everyday Checking',
-          type: 'checking',
-          accountNumber: String(4_100_000_000 + (Date.now() % 8_000_000_000)),
-          balanceCents: jimmy ? JIMMY_CHECKING_CENTS : 0,
-        })
-        .returning()
-      checking = created
-    }
-
-    if (jimmy) {
-      await applyJimmyChecking(member.id, checking.id)
-    }
-
-    const result = await ensureTenThousandHistory(member.id, checking.id, {
-      restaurants: jimmy,
-    })
-    results.push({
-      email: member.email,
-      count: result.count,
-      done: result.done,
-    })
+    results.push(await seedMember(member))
   }
-
   return results
 }
