@@ -9,7 +9,7 @@ import { authClient } from '@/lib/auth-client'
 import { emailMyStatement } from '@/app/actions/email-statement'
 import { ApexLogo } from '@/components/apex-logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { ADMIN_EMAIL } from '@/lib/bank-constants'
+import { ADMIN_EMAIL, BANK_NAME } from '@/lib/bank-constants'
 
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 
@@ -96,7 +96,7 @@ export function DashboardHeader({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `apex-${months}mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
+      a.download = `nicolet-${months}mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -132,7 +132,7 @@ export function DashboardHeader({
         <Link href="/dashboard" className="flex items-center gap-2">
           <ApexLogo className="h-7 w-7 text-primary" />
           <span className="text-lg font-bold tracking-tight text-foreground">
-            Apex Bank
+            {BANK_NAME}
           </span>
         </Link>
 
