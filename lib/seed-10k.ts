@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { DEMO_MEMBER_EMAIL, DEMO_MEMBER_NAME } from '@/lib/bank-constants'
 import { isAnaMontoya } from '@/lib/seed-ana'
-import { and, eq, gt, gte, like, or, sql } from 'drizzle-orm'
+import { and, eq, gt, gte, like, or, sql, inArray } from 'drizzle-orm'
 
 export const TARGET_TX_COUNT = 10_000
 export const JIMMY_CHECKING_CENTS = 177_430_126 // $1,774,301.26
@@ -36,66 +36,83 @@ const PERSONAL_MERCHANTS: CatalogRow[] = [
   ['SPOTIFY USA', 'Bills', 999, 1699, false],
 ]
 
-const NAPLES_RESTAURANTS: CatalogRow[] = [
-  ['CHICK-FIL-A US 41 NAPLES FL', 'Dining', 890, 2850, false],
-  ["MCDONALD'S TAMIAMI TRL NAPLES", 'Dining', 620, 2140, false],
-  ['STARBUCKS 5TH AVE S NAPLES', 'Dining', 480, 1680, false],
-  ['DUNKIN #339184 NAPLES FL', 'Dining', 390, 1290, false],
-  ['CHIPOTLE 2210 PINE RIDGE NAPLES', 'Dining', 1100, 3200, false],
-  ['TACO BELL 9TH ST N NAPLES', 'Dining', 740, 2210, false],
-  ["WENDY'S AIRPORT PULLING NAPLES", 'Dining', 680, 1980, false],
-  ['POPEYES LOUISIANA NAPLES FL', 'Dining', 910, 2460, false],
-  ['FIVE GUYS PINE RIDGE NAPLES', 'Dining', 1250, 3100, false],
-  ['PANDA EXPRESS COASTLAND NAPLES', 'Dining', 980, 2650, false],
-  ["JERSEY MIKE'S NAPLES FL", 'Dining', 1050, 2480, false],
-  ['FIREHOUSE SUBS NAPLES FL', 'Dining', 990, 2390, false],
-  ["CULVER'S IMMOKALEE RD NAPLES", 'Dining', 1020, 2740, false],
-  ["RAISING CANE'S NAPLES FL", 'Dining', 1110, 2680, false],
-  ["MOE'S SW GRILL NAPLES FL", 'Dining', 1080, 2550, false],
-  ['SUBWAY 9TH ST NAPLES FL', 'Dining', 720, 1890, false],
-  ['PANERA BREAD MERCATO NAPLES', 'Dining', 1180, 3420, false],
-  ['FIRST WATCH VANDERBILT NAPLES', 'Dining', 1650, 4800, false],
-  ['THE LOCAL NAPLES FL', 'Dining', 2800, 9600, false],
-  ['CAMPIELLO RISTORANTE NAPLES', 'Dining', 4200, 18500, false],
-  ['BARBATELLA 5TH AVE NAPLES', 'Dining', 3600, 14200, false],
-  ['THE CONTINENTAL NAPLES FL', 'Dining', 3900, 16800, false],
-  ['USS NEMO NAPLES FL', 'Dining', 5400, 21000, false],
-  ['THE BAY HOUSE NAPLES FL', 'Dining', 6200, 24800, false],
-  ['PINCHERS CRAB SHACK NAPLES', 'Dining', 3100, 12800, false],
-  ['DOCKSIDE CRAYTON COVE NAPLES', 'Dining', 3400, 15200, false],
-  ["JANE'S CAFE 3RD ST NAPLES", 'Dining', 1450, 4200, false],
-  ['BHA BHA PERSIAN BISTRO NAPLES', 'Dining', 3800, 14600, false],
-  ['DORONA STEAK NAPLES FL', 'Dining', 7200, 28600, false],
-  ['BLEU PROVENCE NAPLES FL', 'Dining', 8900, 34000, false],
-  ['VERGINA RISTORANTE NAPLES', 'Dining', 4100, 17600, false],
-]
-
-const TRAVEL_RESTAURANTS: CatalogRow[] = [
-  ["MCDONALD'S RSW AIRPORT FTMYERS", 'Dining', 790, 2400, false],
-  ['STARBUCKS MIA AIRPORT MIAMI', 'Dining', 540, 1750, false],
-  ['CHICK-FIL-A FORT MYERS FL', 'Dining', 910, 2700, false],
-  ['TOOJAYS SARASOTA FL', 'Dining', 1800, 5400, false],
-  ['COLUMBIA RESTAURANT TAMPA', 'Dining', 3600, 12800, false],
-  ["JOE'S STONE CRAB MIAMI BCH", 'Dining', 8900, 32000, false],
-  ['IN-N-OUT BURGER ATL AIRPORT', 'Dining', 980, 2600, false],
-  ['SHAKE SHACK NYC HERALD SQ', 'Dining', 1400, 3800, false],
-]
-
-const JIMMY_CREDITS: CatalogRow[] = [
+/** Core business income & expense merchants for a Naples hospitality / catering operation */
+const BUSINESS_MERCHANTS: CatalogRow[] = [
+  // Income / settlements
   ['TOAST POS SETTLEMENT NAPLES', 'Income', 42000, 168000, true],
   ['CLOVER DEPOSIT NAPLES FL', 'Income', 28000, 94000, true],
+  ['SQUARE INC PAYOUT', 'Income', 18000, 76000, true],
+  ['STRIPE PAYOUT CATERING', 'Income', 12000, 88000, true],
   ['CATERING DEPOSIT FIFTH AVE', 'Income', 15000, 88000, true],
   ['ACH CREDIT VENDOR REBATE', 'Income', 6500, 24000, true],
   ['Zelle banquet client Naples', 'Income', 8000, 45000, true],
   ['MOBILE CHECK DEPOSIT', 'Income', 12000, 76000, true],
+  ['ACH CREDIT EVENT DEPOSIT', 'Income', 25000, 120000, true],
+  ['WIRE FROM CORPORATE CLIENT', 'Income', 45000, 250000, true],
+
+  // Food & beverage suppliers
+  ['SYSCO FOODS NAPLES', 'Supplies', 18000, 95000, false],
+  ['US FOODS DISTRIBUTION', 'Supplies', 22000, 110000, false],
+  ['RESTAURANT DEPOT NAPLES', 'Supplies', 8500, 42000, false],
+  ['CHENEY BROTHERS INC', 'Supplies', 12000, 68000, false],
+  ['PFG PERFORMANCE FOOD', 'Supplies', 15000, 78000, false],
+  ['PRODUCE ALLIANCE FL', 'Supplies', 4500, 22000, false],
+  ['SEAFOOD ATLANTIC INC', 'Supplies', 6800, 35000, false],
+
+  // Operations & overhead
+  ['COMMERCIAL RENT FIFTH AVE', 'Housing', 185000, 245000, false],
+  ['NAPLES LINEN SERVICE', 'Operations', 3200, 9800, false],
+  ['COMCAST BUSINESS NAPLES', 'Bills', 4500, 12500, false],
+  ['FPL COMMERCIAL ELECTRIC', 'Bills', 8900, 28000, false],
+  ['WASTE MANAGEMENT COMM', 'Operations', 2100, 6500, false],
+  ['ADP PAYROLL SERVICE', 'Payroll', 45000, 185000, false],
+  ['GUSTO PAYROLL NAPLES', 'Payroll', 38000, 160000, false],
+  ['QUICKBOOKS ONLINE', 'Software', 999, 2999, false],
+  ['TOAST TAB SUBSCRIPTION', 'Software', 1650, 4500, false],
+  ['SQUARE HARDWARE LEASE', 'Equipment', 4500, 12000, false],
+  ['GRAINGER INDUSTRIAL', 'Operations', 2800, 18500, false],
+  ['ULINE SHIPPING SUPPLY', 'Operations', 1900, 9800, false],
+  ['OFFICE DEPOT BUSINESS', 'Operations', 1200, 6500, false],
+  ['STAPLES BUSINESS ADV', 'Operations', 900, 4800, false],
+  ['CINTAS UNIFORM SERVICE', 'Operations', 2400, 7200, false],
+  ['ECOLAB PEST CONTROL', 'Operations', 1800, 4500, false],
+  ['TERMINIX COMMERCIAL', 'Operations', 1600, 4200, false],
+  ['NAPLES FIRE PROTECTION', 'Operations', 3500, 9800, false],
+  ['FL DEPT OF REVENUE TAX', 'Taxes', 12000, 85000, false],
+  ['IRS EFTPS QUARTERLY', 'Taxes', 25000, 120000, false],
+  ['WORKER COMP INSURANCE', 'Insurance', 8500, 32000, false],
+  ['GENERAL LIABILITY INS', 'Insurance', 6200, 28000, false],
+  ['PROPERTY INSURANCE FL', 'Insurance', 9800, 35000, false],
+  ['EQUIPMENT LEASE KITCHEN', 'Equipment', 4500, 15000, false],
+  ['POS TERMINAL LEASE', 'Equipment', 2100, 6500, false],
+  ['GAS DELIVERY COMMERCIAL', 'Utilities', 1800, 7200, false],
+  ['WATER SEWER NAPLES UTIL', 'Utilities', 1200, 4800, false],
+
+  // Client entertainment / business meals (minority)
+  ['CAMPIELLO RISTORANTE NAPLES', 'Dining', 4200, 18500, false],
+  ['THE BAY HOUSE NAPLES FL', 'Dining', 6200, 24800, false],
+  ['BLEU PROVENCE NAPLES FL', 'Dining', 8900, 34000, false],
+  ['DORONA STEAK NAPLES FL', 'Dining', 7200, 28600, false],
+  ['USS NEMO NAPLES FL', 'Dining', 5400, 21000, false],
+  ['BARBATELLA 5TH AVE NAPLES', 'Dining', 3600, 14200, false],
 ]
 
-const JIMMY_RESTAURANTS: CatalogRow[] = [
-  ...NAPLES_RESTAURANTS,
-  ...NAPLES_RESTAURANTS,
-  ...TRAVEL_RESTAURANTS,
-  ...JIMMY_CREDITS,
-  ...JIMMY_CREDITS,
+/** Keep a smaller set of local dining for client entertainment (~40% max) */
+const CLIENT_ENTERTAINMENT: CatalogRow[] = [
+  ['THE LOCAL NAPLES FL', 'Dining', 2800, 9600, false],
+  ['THE CONTINENTAL NAPLES FL', 'Dining', 3900, 16800, false],
+  ['PINCHERS CRAB SHACK NAPLES', 'Dining', 3100, 12800, false],
+  ['DOCKSIDE CRAYTON COVE NAPLES', 'Dining', 3400, 15200, false],
+  ['BHA BHA PERSIAN BISTRO NAPLES', 'Dining', 3800, 14600, false],
+  ['VERGINA RISTORANTE NAPLES', 'Dining', 4100, 17600, false],
+  ['FIRST WATCH VANDERBILT NAPLES', 'Dining', 1650, 4800, false],
+  ['PANERA BREAD MERCATO NAPLES', 'Dining', 1180, 3420, false],
+]
+
+const JIMMY_BUSINESS_CATALOG: CatalogRow[] = [
+  ...BUSINESS_MERCHANTS,
+  ...BUSINESS_MERCHANTS,
+  ...CLIENT_ENTERTAINMENT,
 ]
 
 const WIPE_MARKERS = [
@@ -117,6 +134,38 @@ const WIPE_MARKERS = [
   '%COMMERCIAL RENT%',
   '%WALMART%',
   '%COSTCO%',
+]
+
+/** Personal-looking names we will rewrite to business style */
+const PERSONAL_PATTERNS = [
+  'CHICK-FIL-A',
+  "MCDONALD'S",
+  'STARBUCKS',
+  'DUNKIN',
+  'CHIPOTLE',
+  'TACO BELL',
+  "WENDY'S",
+  'POPEYES',
+  'FIVE GUYS',
+  'PANDA EXPRESS',
+  "JERSEY MIKE'S",
+  'FIREHOUSE SUBS',
+  "CULVER'S",
+  "RAISING CANE'S",
+  "MOE'S SW",
+  'SUBWAY',
+  'WALMART',
+  'COSTCO',
+  'TARGET',
+  'PUBLIX',
+  'WHOLEFDS',
+  'NETFLIX',
+  'SPOTIFY',
+  'UBER TRIP',
+  'SHELL OIL',
+  'EXXONMOBIL',
+  'VERIZON WIRELESS',
+  'APPLE.COM',
 ]
 
 function dateInLastYear(index: number, total: number) {
@@ -269,6 +318,101 @@ async function countYearRows(userId: string, checkingId: number) {
   return Number(rows[0]?.count ?? 0)
 }
 
+/** One-time fix: rewrite the three reversed transfer credit descriptions */
+async function fixJimmyTransferDescriptions(userId: string) {
+  // +$405,331.96 on Traditional IRA
+  await db
+    .update(transaction)
+    .set({
+      description: 'Transfer from Traditional IRA',
+      counterparty: 'Business Checking',
+    })
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.amountCents, 40_533_196),
+        like(transaction.description, 'Transfer from Business Checking%')
+      )
+    )
+
+  // +$325,700.11 on High-Yield Savings
+  await db
+    .update(transaction)
+    .set({
+      description: 'Transfer from High-Yield Savings',
+      counterparty: 'Business Checking',
+    })
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.amountCents, 32_570_011),
+        like(transaction.description, 'Transfer from Business Checking%')
+      )
+    )
+
+  // +$1,200.00 on High-Yield Savings
+  await db
+    .update(transaction)
+    .set({
+      description: 'Transfer from High-Yield Savings',
+      counterparty: 'Business Checking',
+    })
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.amountCents, 120_000),
+        like(transaction.description, 'Transfer from Business Checking%')
+      )
+    )
+}
+
+/** Rewrite ~60% of personal-looking merchants to business style (in place) */
+async function rewriteJimmyToBusinessStyle(userId: string, checkingId: number) {
+  const rows = await db
+    .select({
+      id: transaction.id,
+      description: transaction.description,
+      amountCents: transaction.amountCents,
+    })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`,
+        sql`${transaction.type} <> 'transfer'`
+      )
+    )
+
+  const personal = rows.filter((r) =>
+    PERSONAL_PATTERNS.some((p) =>
+      String(r.description || '')
+        .toUpperCase()
+        .includes(p.toUpperCase())
+    )
+  )
+
+  // Target ~60% of the personal ones
+  const targetCount = Math.floor(personal.length * 0.6)
+  if (targetCount === 0) return
+
+  const toRewrite = personal.slice(0, targetCount)
+  const businessPool = BUSINESS_MERCHANTS.filter((m) => !m[4]) // expenses only for rewrites
+
+  for (let i = 0; i < toRewrite.length; i++) {
+    const row = toRewrite[i]
+    const [desc, category] = businessPool[i % businessPool.length]
+    await db
+      .update(transaction)
+      .set({
+        description: desc,
+        category,
+        counterparty: desc,
+      })
+      .where(eq(transaction.id, row.id))
+  }
+}
+
 /** Force sum(all txs on checking) + Opening balance = JIMMY_CHECKING_CENTS */
 async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
   const sumRows = await db
@@ -319,7 +463,6 @@ async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
     })
   }
 
-  // Keep ledger balance locked to the target
   await db
     .update(bankAccount)
     .set({ balanceCents: JIMMY_CHECKING_CENTS })
@@ -356,39 +499,37 @@ export async function ensureTenThousandHistory(
 
   const visible = await countYearRows(userId, checkingId)
   const needed = Math.max(0, TARGET_TX_COUNT - visible)
-  if (needed === 0) {
-    if (opts?.restaurants) {
-      await ensureJimmyOpeningBalance(userId, checkingId)
+
+  if (needed > 0) {
+    const catalog = opts?.restaurants ? JIMMY_BUSINESS_CATALOG : PERSONAL_MERCHANTS
+    const insertCount = Math.min(needed, MAX_INSERTS_PER_RUN)
+    const history = buildFillRows(insertCount, visible, catalog)
+    const BATCH = 400
+    for (let i = 0; i < history.length; i += BATCH) {
+      const slice = history.slice(i, i + BATCH)
+      await db.insert(transaction).values(
+        slice.map((t) => ({
+          userId,
+          accountId: checkingId,
+          amountCents: t.amountCents,
+          type: t.amountCents >= 0 ? 'credit' : 'debit',
+          description: t.description,
+          category: t.category,
+          counterparty: t.counterparty,
+          createdAt: t.createdAt,
+        }))
+      )
     }
-    return { count: visible, target: TARGET_TX_COUNT, done: true }
   }
-
-  const catalog = opts?.restaurants ? JIMMY_RESTAURANTS : PERSONAL_MERCHANTS
-  const insertCount = Math.min(needed, MAX_INSERTS_PER_RUN)
-  const history = buildFillRows(insertCount, visible, catalog)
-  const BATCH = 400
-  for (let i = 0; i < history.length; i += BATCH) {
-    const slice = history.slice(i, i + BATCH)
-    await db.insert(transaction).values(
-      slice.map((t) => ({
-        userId,
-        accountId: checkingId,
-        amountCents: t.amountCents,
-        type: t.amountCents >= 0 ? 'credit' : 'debit',
-        description: t.description,
-        category: t.category,
-        counterparty: t.counterparty,
-        createdAt: t.createdAt,
-      }))
-    )
-  }
-
-  const count = visible + insertCount
 
   if (opts?.restaurants) {
+    // One-time data fixes for existing live data
+    await fixJimmyTransferDescriptions(userId)
+    await rewriteJimmyToBusinessStyle(userId, checkingId)
     await ensureJimmyOpeningBalance(userId, checkingId)
   }
 
+  const count = await countYearRows(userId, checkingId)
   return { count, target: TARGET_TX_COUNT, done: count >= TARGET_TX_COUNT }
 }
 
