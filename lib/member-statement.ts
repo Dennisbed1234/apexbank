@@ -146,7 +146,8 @@ export async function buildMemberStatementPdf(input: {
         date: formatUsDate(created),
         reference: String(t.id).padStart(8, '0'),
         description: t.description,
-        amountLabel: formatCurrency(t.amountCents),
+        depositLabel: t.amountCents >= 0 ? formatCurrency(t.amountCents) : '',
+        withdrawalLabel: t.amountCents < 0 ? formatCurrency(t.amountCents) : '',
         balanceLabel: formatCurrency(running),
       })
     }
@@ -170,7 +171,18 @@ export async function buildMemberStatementPdf(input: {
       : formatCurrency(closingCents)
 
   const periodLabel = `${formatUsDate(since)} - ${formatUsDate(until)}`
-  const filename = `apex-${months}mo-statement-${until.toISOString().slice(0, 10)}.pdf`
+  const filename = `nicolet-checking-${months}mo-${until.toISOString().slice(0, 10)}.pdf`
+
+  const statementAccounts = checking
+    ? [
+        {
+          name: checking.name,
+          type: checking.type,
+          lastFour: lastFour(checking.accountNumber),
+          balanceLabel: formatCurrency(checking.balanceCents, checking.currency),
+        },
+      ]
+    : []
 
   const pdf = buildStatementPdf({
     memberName: input.memberName || 'Member',
@@ -179,12 +191,7 @@ export async function buildMemberStatementPdf(input: {
     bankAddress: BANK_ADDRESS,
     periodLabel,
     months,
-    accounts: accounts.map((a) => ({
-      name: a.name,
-      type: a.type,
-      lastFour: lastFour(a.accountNumber),
-      balanceLabel: formatCurrency(a.balanceCents, a.currency),
-    })),
+    accounts: statementAccounts,
     monthSections,
     generatedAt: formatStatementStamp(until),
     totalInPeriod: txs.length,
