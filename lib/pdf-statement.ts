@@ -32,8 +32,10 @@ function jpegBytes() {
   return Buffer.from(NICOLET_LOGO_JPEG_B64, 'base64')
 }
 
-function pageStream(lines: string[]) {
-  // Small header logo — about 1/3 the previous size
+type PdfLine = { text: string; bold?: boolean }
+
+function pageStream(lines: PdfLine[]) {
+  // Small header logo
   const logoW = 56
   const logoH = (logoW * NICOLET_LOGO_HEIGHT) / NICOLET_LOGO_WIDTH
   const logoY = 792 - 20 - logoH
@@ -44,13 +46,21 @@ function pageStream(lines: string[]) {
     '/Im1 Do',
     'Q',
     'BT',
-    '/F1 10 Tf',
     `36 ${textY.toFixed(2)} Td`,
     '14 TL',
   ]
+  let currentBold: boolean | null = null
   lines.forEach((line, i) => {
     if (i > 0) cmds.push('T*')
-    cmds.push(`(${escapePdf(line)}) Tj`)
+    const wantBold = !!line.bold
+    if (currentBold !== wantBold) {
+      cmds.push(wantBold ? '/F2 10 Tf' : '/F1 10 Tf')
+      currentBold = wantBold
+    } else if (i === 0) {
+      cmds.push(wantBold ? '/F2 10 Tf' : '/F1 10 Tf')
+      currentBold = wantBold
+    }
+    cmds.push(`(${escapePdf(line.text)}) Tj`)
   })
   cmds.push('ET')
   return cmds.join('\n')
@@ -119,60 +129,77 @@ export function buildStatementPdf(input: {
     clip('Balance', 16).padStart(16),
   ].join('   ')
 
-  const body: string[] = []
+  const body: PdfLine[] = []
   for (const month of input.monthSections) {
-    body.push('')
-    body.push(month.label.toUpperCase())
-    body.push(`Beginning balance                                    ${month.beginningLabel}`)
-    body.push(colHead)
+    body.push({ text: '' })
+    body.push({ text: month.label.toUpperCase(), bold: true })
+    body.push({
+      text: `Beginning balance                                    ${month.beginningLabel}`,
+    })
+    body.push({ text: colHead })
     if (month.transactions.length === 0) {
-      body.push('No posted items this month.')
+      body.push({ text: 'No posted items this month.' })
     } else {
-      for (const t of month.transactions) body.push(ledgerRow(t))
+      for (const t of month.transactions) body.push({ text: ledgerRow(t) })
     }
-    body.push(`Total deposits                                       ${month.creditsLabel}`)
-    body.push(`Total withdrawals                                    ${month.debitsLabel}`)
-    body.push(`Posted items                                         ${month.count}`)
-    body.push(`Ending balance                                       ${month.closingLabel}`)
+    body.push({
+      text: `Total deposits                                       ${month.creditsLabel}`,
+    })
+    body.push({
+      text: `Total withdrawals                                    ${month.debitsLabel}`,
+    })
+    body.push({
+      text: `Posted items                                         ${month.count}`,
+    })
+    body.push({
+      text: `Ending balance                                       ${month.closingLabel}`,
+    })
   }
 
   const account = input.accounts[0]
-  const header = [
-    'BUSINESS CHECKING STATEMENT',
-    `${months}-month period  ${input.periodLabel}`,
-    `Generated ${input.generatedAt} CT`,
-    '',
-    `Account holder    ${input.memberName}`,
-    `Mailing address   ${input.mailingAddress || 'Not on file'}`,
-    `Routing number    ${input.routingNumber}`,
+  // Bank address sits directly under the logo, then statement title/body
+  const header: PdfLine[] = [
+    { text: input.bankAddress },
+    { text: '' },
+    { text: 'BUSINESS CHECKING STATEMENT', bold: true },
+    { text: `${months}-month period  ${input.periodLabel}` },
+    { text: `Generated ${input.generatedAt} CT` },
+    { text: '' },
+    { text: `Account holder    ${input.memberName}`, bold: true },
+    {
+      text: `Mailing address   ${input.mailingAddress || 'Not on file'}`,
+      bold: true,
+    },
+    { text: `Routing number    ${input.routingNumber}` },
     account
-      ? `Account           ${account.name}  ****${account.lastFour}`
-      : 'Account           Business Checking',
-    account ? `Current balance   ${account.balanceLabel}` : '',
-    `Bank              ${input.bankAddress}`,
-    '',
-    `Posted items      ${input.totalInPeriod}`,
-    `Beginning balance ${input.periodOpeningLabel}`,
-    `Ending balance    ${input.periodClosingLabel}`,
-    'Each running balance = prior balance + that item.',
-  ].filter((line) => line !== undefined)
+      ? { text: `Account           ${account.name}  ****${account.lastFour}` }
+      : { text: 'Account           Business Checking' },
+    account ? { text: `Current balance   ${account.balanceLabel}` } : { text: '' },
+    { text: '' },
+    { text: `Posted items      ${input.totalInPeriod}` },
+    { text: `Beginning balance ${input.periodOpeningLabel}` },
+    { text: `Ending balance    ${input.periodClosingLabel}` },
+    { text: 'Each running balance = prior balance + that item.' },
+  ].filter((line) => line.text !== undefined)
 
-  const footer = [
-    '',
-    `End of statement. ${input.totalInPeriod} posted items.`,
-    `Final ending balance ${input.lastMonthClosingLabel} equals current balance ${input.periodClosingLabel}.`,
-    'Dates use Central Time. Member FDIC.',
+  const footer: PdfLine[] = [
+    { text: '' },
+    { text: `End of statement. ${input.totalInPeriod} posted items.` },
+    {
+      text: `Final ending balance ${input.lastMonthClosingLabel} equals current balance ${input.periodClosingLabel}.`,
+    },
+    { text: 'Dates use Central Time. Member FDIC.' },
   ]
 
   const all = [...header, ...body, ...footer]
   const PER = 42
-  const pages: string[][] = []
+  const pages: PdfLine[][] = []
   for (let i = 0; i < all.length; i += PER) {
     const chunk = all.slice(i, i + PER)
-    if (pages.length > 0) chunk.push(`Page ${pages.length + 1}`)
+    if (pages.length > 0) chunk.push({ text: `Page ${pages.length + 1}` })
     pages.push(chunk)
   }
-  if (!pages.length) pages.push(['Nicolet National Bank statement'])
+  if (!pages.length) pages.push([{ text: 'Nicolet National Bank statement' }])
 
   const n = pages.length
   const streams = pages.map(pageStream)
@@ -200,14 +227,16 @@ export function buildStatementPdf(input: {
   offsets.push(size)
   push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`)
 
-  const fontId = 3 + 2 * n
-  const imageId = fontId + 1
+  // Fonts: F1 Helvetica, F2 Helvetica-Bold
+  const fontRegularId = 3 + 2 * n
+  const fontBoldId = fontRegularId + 1
+  const imageId = fontBoldId + 1
 
   for (let i = 0; i < n; i++) {
     const contentId = 3 + n + i
     offsets.push(size)
     push(
-      `${3 + i} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> /XObject << /Im1 ${imageId} 0 R >> >> >>\nendobj\n`
+      `${3 + i} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> /XObject << /Im1 ${imageId} 0 R >> >> >>\nendobj\n`
     )
   }
 
@@ -219,7 +248,14 @@ export function buildStatementPdf(input: {
   }
 
   offsets.push(size)
-  push(`${fontId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`)
+  push(
+    `${fontRegularId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`
+  )
+
+  offsets.push(size)
+  push(
+    `${fontBoldId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n`
+  )
 
   offsets.push(size)
   push(
