@@ -16,7 +16,7 @@ export function CtaFooter() {
           </h2>
           <p className="max-w-lg text-pretty text-lg text-sidebar-foreground/80">
             It takes about three minutes. No paperwork, no branch visit, and no
-            monthly fees — ever.
+            monthly fees ever.
           </p>
           <Button
             size="lg"
