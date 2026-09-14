@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 import {
-  seedLargeHistoryForNamedMembers,
+  seedLargeHistoryForUser,
   shouldSeedLargeHistory,
   TARGET_TX_COUNT,
 } from '@/lib/seed-10k'
@@ -26,11 +26,15 @@ export async function POST() {
       return NextResponse.json({ ok: true, skipped: true, target: TARGET_TX_COUNT })
     }
 
-    const results = await seedLargeHistoryForNamedMembers()
+    const result = await seedLargeHistoryForUser(
+      session.user.id,
+      session.user.name,
+      session.user.email
+    )
     return NextResponse.json({
       ok: true,
       target: TARGET_TX_COUNT,
-      results,
+      results: result ? [result] : [],
     })
   } catch (err) {
     console.error('[seed-history]', err)
