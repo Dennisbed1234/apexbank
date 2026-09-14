@@ -2,11 +2,11 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { BANK_ADDRESS, ROUTING_NUMBER } from '@/lib/bank-constants'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
-import { formatMailingAddress } from '@/app/actions/settings'
 import { buildStatementPdf, type StatementMonth } from '@/lib/pdf-statement'
 import {
   chicagoMonthKey,
   formatCurrency,
+  formatMailingAddress,
   formatMonthYear,
   formatStatementStamp,
   lastFour,
