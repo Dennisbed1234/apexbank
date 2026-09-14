@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, LogOut, Mail, Settings, Shield } from 'lucide-react'
+import { FileText, LogOut, Mail, Settings, Shield, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { emailMyStatement } from '@/app/actions/email-statement'
@@ -160,6 +160,14 @@ export function DashboardHeader({
                 </div>
               </div>
               <div className="my-1 h-px bg-border" />
+              <Link
+                href="/dashboard/profile"
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                onClick={() => setOpen(false)}
+              >
+                <User className="size-4" />
+                Profile
+              </Link>
               <Link
                 href="/dashboard/settings"
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
