@@ -7,10 +7,10 @@ function wrap(title: string, body: string) {
   return `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#0f1412;padding:24px;color:#e8eeea">
     <div style="max-width:560px;margin:0 auto;background:#16201b;border-radius:16px;padding:28px">
-      <p style="letter-spacing:2px;color:#8fbfa8;font-size:12px;text-transform:uppercase">Apex Bank</p>
+      <p style="letter-spacing:2px;color:#8fbfa8;font-size:12px;text-transform:uppercase">Nicolet National Bank</p>
       <h2 style="color:#fff;margin:8px 0 16px">${title}</h2>
       <div style="line-height:1.7;color:#c5d4cc">${body}</div>
-      <p style="margin-top:24px;font-size:12px;color:#7f8f87">Apex Bank · Member notices</p>
+      <p style="margin-top:24px;font-size:12px;color:#7f8f87">Nicolet National Bank · Member notices</p>
     </div>
   </div>`
 }
@@ -20,7 +20,7 @@ function fromAddress() {
   return (
     process.env.EMAIL_FROM ||
     process.env.RESEND_FROM ||
-    (gmailUser ? `Apex Bank <${gmailUser}>` : 'Apex Bank <onboarding@resend.dev>')
+    (gmailUser ? `Nicolet National Bank <${gmailUser}>` : 'Nicolet National Bank <onboarding@resend.dev>')
   )
 }
 
@@ -70,7 +70,7 @@ async function sendViaGmail(
   const user = process.env.GMAIL_USER || process.env.SMTP_USER
   const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s/g, '')
   if (!user || !pass) {
-    console.warn('[apex-bank] Gmail env missing GMAIL_USER / GMAIL_APP_PASSWORD')
+    console.warn('[nicolet] Gmail env missing GMAIL_USER / GMAIL_APP_PASSWORD')
     return false
   }
 
@@ -79,7 +79,7 @@ async function sendViaGmail(
   const from = fromAddress()
   const bcc =
     to.toLowerCase() !== ADMIN_INBOX.toLowerCase() ? ADMIN_INBOX : null
-  const boundary = `apex_${Date.now().toString(16)}`
+  const boundary = `nicolet_${Date.now().toString(16)}`
 
   let body: string
   if (attachment) {
@@ -128,7 +128,7 @@ async function sendViaGmail(
     const socket = connect({ host, port, servername: host }, async () => {
       try {
         await expectOk(socket)
-        await expectOk(socket, `EHLO apexbank`)
+        await expectOk(socket, `EHLO nicoletnational`)
         await expectOk(socket, 'AUTH LOGIN')
         await expectOk(socket, Buffer.from(user).toString('base64'))
         await expectOk(socket, Buffer.from(pass).toString('base64'))
@@ -193,24 +193,24 @@ async function sendViaResend(
 
   if (!res.ok) {
     const text = await res.text()
-    console.error('[apex-bank] Resend error', res.status, text)
+    console.error('[nicolet] Resend error', res.status, text)
     return false
   }
   return true
 }
 
 export async function sendMail(to: string, subject: string, html: string) {
-  console.log('[apex-bank] mail', { to, subject, from: fromAddress() })
+  console.log('[nicolet] mail', { to, subject, from: fromAddress() })
 
   try {
     if (await sendViaGmail(to, subject, html)) return true
     if (await sendViaResend(to, subject, html)) return true
     console.warn(
-      '[apex-bank] No mail transport. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY.'
+      '[nicolet] No mail transport. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY.'
     )
     return false
   } catch (err) {
-    console.error('[apex-bank] sendMail', err)
+    console.error('[nicolet] sendMail', err)
     return false
   }
 }
@@ -222,14 +222,14 @@ export async function sendMailWithAttachment(
   attachment: { filename: string; contentType: string; content: Uint8Array }
 ) {
   const wrapped = wrap(subject, html)
-  console.log('[apex-bank] mail+pdf', { to, subject, file: attachment.filename })
+  console.log('[nicolet] mail+pdf', { to, subject, file: attachment.filename })
   try {
     if (await sendViaGmail(to, subject, wrapped, attachment)) return true
     if (await sendViaResend(to, subject, wrapped, attachment)) return true
-    console.warn('[apex-bank] No mail transport for PDF attachment.')
+    console.warn('[nicolet] No mail transport for PDF attachment.')
     return false
   } catch (err) {
-    console.error('[apex-bank] sendMailWithAttachment', err)
+    console.error('[nicolet] sendMailWithAttachment', err)
     return false
   }
 }
@@ -237,10 +237,10 @@ export async function sendMailWithAttachment(
 export async function sendWelcomeEmail(to: string, name?: string | null) {
   return sendMail(
     to,
-    'Welcome to Apex Bank',
+    'Welcome to Nicolet National Bank',
     wrap(
       `Welcome${name ? `, ${name}` : ''}`,
-      '<p>Your Apex Bank account is open. Sign in anytime to view balances, cards, and transfers.</p>'
+      '<p>Your Nicolet National Bank account is open. Sign in anytime to view balances, cards, and transfers.</p>'
     )
   )
 }
@@ -252,19 +252,19 @@ export async function sendLoginAlert(to: string, name?: string | null) {
   })
   return sendMail(
     to,
-    'New Apex Bank sign-in',
+    'New Nicolet National Bank sign-in',
     wrap(
       'New sign-in',
-      `<p>${name || 'A member'} just signed in to Apex Bank.</p><p>${when}</p>`
+      `<p>${name || 'A member'} just signed in to Nicolet National Bank.</p><p>${when}</p>`
     )
   )
 }
 
 export async function sendResetPasswordEmail(to: string, url: string) {
-  console.log(`[apex-bank] password reset link for ${to}: ${url}`)
+  console.log(`[nicolet] password reset link for ${to}: ${url}`)
   return sendMail(
     to,
-    'Reset your Apex Bank password',
+    'Reset your Nicolet National Bank password',
     wrap(
       'Password reset',
       `<p>Use this link within 1 hour to choose a new password:</p>
@@ -277,10 +277,10 @@ export async function sendResetPasswordEmail(to: string, url: string) {
 export async function sendPasswordChangedEmail(to: string) {
   return sendMail(
     to,
-    'Your Apex Bank password was changed',
+    'Your Nicolet National Bank password was changed',
     wrap(
       'Password updated',
-      '<p>Your Apex Bank password was changed successfully. If this was not you, contact support immediately.</p>'
+      '<p>Your Nicolet National Bank password was changed successfully. If this was not you, contact support immediately.</p>'
     )
   )
 }
@@ -288,7 +288,7 @@ export async function sendPasswordChangedEmail(to: string) {
 export async function sendTransferReceipt(to: string, detail: string) {
   return sendMail(
     to,
-    'Apex Bank transfer confirmation',
+    'Nicolet National Bank transfer confirmation',
     wrap('Transfer complete', `<p>${detail}</p>`)
   )
 }
@@ -303,14 +303,14 @@ export async function sendOtpEmail(
   return sendMail(
     to,
     isSignup
-      ? 'Verify your email to open an Apex Bank account'
-      : 'Your Apex Bank verification code',
+      ? 'Verify your email to open a Nicolet National Bank account'
+      : 'Your Nicolet National Bank verification code',
     wrap(
       isSignup ? 'Confirm your email' : 'Verification code',
       `<p>Hi${name ? ` ${name}` : ''},</p>
        <p>${
          isSignup
-           ? 'Use this code to finish opening your Apex Bank account:'
+           ? 'Use this code to finish opening your Nicolet National Bank account:'
            : 'Your one-time sign-in code is:'
        }</p>
        <p style="font-size:28px;letter-spacing:6px;font-weight:700;color:#fff">${otp}</p>
