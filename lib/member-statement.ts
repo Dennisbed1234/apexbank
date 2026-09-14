@@ -2,8 +2,9 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { BANK_ADDRESS, ROUTING_NUMBER } from '@/lib/bank-constants'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
-import { buildStatementPdf, type StatementMonth } from '@/lib/pdf-statement'
+import { buildStatementPdf, type StatementMonth, type StatementLine } from '@/lib/pdf-statement'
 import {
+  BANK_TIMEZONE,
   chicagoMonthKey,
   formatCurrency,
   formatMailingAddress,
@@ -24,75 +25,39 @@ export function statementWindow(months = 12) {
   const span = clampStatementMonths(months)
   const since = new Date()
   since.setMonth(since.getMonth() - span)
+  since.setDate(1)
   since.setHours(0, 0, 0, 0)
   const until = new Date()
   return { since, until, months: span }
 }
 
-function buildMonthlySections(
-  txs: Array<{
-    createdAt: Date
-    description: string
-    amountCents: number
-  }>,
-  openingCents: number
-): StatementMonth[] {
-  const groups = new Map<
-    string,
-    {
-      label: string
-      sort: string
-      txs: Array<{ postedAt: string; description: string; amountLabel: string; amountCents: number }>
-    }
-  >()
+function formatUsDate(date: Date | string) {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: BANK_TIMEZONE,
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+  }).format(d)
+}
 
-  for (const t of txs) {
-    const key = chicagoMonthKey(t.createdAt)
-    let group = groups.get(key)
-    if (!group) {
-      group = {
-        label: formatMonthYear(t.createdAt),
-        sort: key,
-        txs: [],
-      }
-      groups.set(key, group)
-    }
-    group.txs.push({
-      postedAt: formatStatementStamp(t.createdAt),
-      description: t.description,
-      amountLabel: formatCurrency(t.amountCents),
-      amountCents: t.amountCents,
+function monthCatalog(since: Date, until: Date) {
+  const keys: Array<{ key: string; label: string }> = []
+  const cursor = new Date(since.getFullYear(), since.getMonth(), 1)
+  const end = new Date(until.getFullYear(), until.getMonth(), 1)
+  while (cursor <= end) {
+    const sample = new Date(cursor.getFullYear(), cursor.getMonth(), 15)
+    keys.push({
+      key: chicagoMonthKey(sample),
+      label: formatMonthYear(sample),
     })
+    cursor.setMonth(cursor.getMonth() + 1)
   }
-
-  const months = [...groups.values()].sort((a, b) => a.sort.localeCompare(b.sort))
-  let running = openingCents
-  return months.map((month) => {
-    const creditsCents = month.txs
-      .filter((t) => t.amountCents > 0)
-      .reduce((sum, t) => sum + t.amountCents, 0)
-    const debitsCents = month.txs
-      .filter((t) => t.amountCents < 0)
-      .reduce((sum, t) => sum + t.amountCents, 0)
-    const netCents = creditsCents + debitsCents
-    const beginningCents = running
-    const closingCents = beginningCents + netCents
-    running = closingCents
-    return {
-      label: month.label,
-      beginningLabel: formatCurrency(beginningCents),
-      closingLabel: formatCurrency(closingCents),
-      creditsLabel: formatCurrency(creditsCents),
-      debitsLabel: formatCurrency(debitsCents),
-      netLabel: formatCurrency(netCents),
-      count: month.txs.length,
-      transactions: month.txs.map(({ postedAt, description, amountLabel }) => ({
-        postedAt,
-        description,
-        amountLabel,
-      })),
-    }
-  })
+  const current = chicagoMonthKey(until)
+  if (!keys.some((k) => k.key === current)) {
+    keys.push({ key: current, label: formatMonthYear(until) })
+  }
+  return keys
 }
 
 export async function buildMemberStatementPdf(input: {
@@ -126,13 +91,7 @@ export async function buildMemberStatementPdf(input: {
       .limit(1)
     const row = rows[0]
     if (row) {
-      const formatted = formatMailingAddress({
-        addressLine1: row.addressLine1 || '',
-        addressLine2: row.addressLine2 || '',
-        city: row.city || '',
-        state: row.state || '',
-        postalCode: row.postalCode || '',
-      })
+      const formatted = formatMailingAddress(row)
       if (formatted) mailingAddress = formatted
     }
   } catch (err) {
@@ -161,21 +120,56 @@ export async function buildMemberStatementPdf(input: {
   const closingCents = checking?.balanceCents ?? 0
   const openingCents = closingCents - periodNet
 
-  const monthSections = buildMonthlySections(
-    txs.map((t) => ({
-      createdAt: t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt),
-      description: t.description,
-      amountCents: t.amountCents,
-    })),
-    openingCents
-  )
+  const grouped = new Map<string, typeof txs>()
+  for (const t of txs) {
+    const created = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
+    const key = chicagoMonthKey(created)
+    const list = grouped.get(key) || []
+    list.push(t)
+    grouped.set(key, list)
+  }
+
+  let running = openingCents
+  const monthSections: StatementMonth[] = monthCatalog(since, until).map((month) => {
+    const rows = grouped.get(month.key) || []
+    const beginningCents = running
+    const lines: StatementLine[] = []
+    let creditsCents = 0
+    let debitsCents = 0
+
+    for (const t of rows) {
+      running += t.amountCents
+      if (t.amountCents >= 0) creditsCents += t.amountCents
+      else debitsCents += t.amountCents
+      const created = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
+      lines.push({
+        date: formatUsDate(created),
+        reference: String(t.id).padStart(8, '0'),
+        description: t.description,
+        amountLabel: formatCurrency(t.amountCents),
+        balanceLabel: formatCurrency(running),
+      })
+    }
+
+    const closingMonth = running
+    return {
+      label: month.label,
+      beginningLabel: formatCurrency(beginningCents),
+      closingLabel: formatCurrency(closingMonth),
+      creditsLabel: formatCurrency(creditsCents),
+      debitsLabel: formatCurrency(debitsCents),
+      netLabel: formatCurrency(creditsCents + debitsCents),
+      count: lines.length,
+      transactions: lines,
+    }
+  })
 
   const lastClose =
     monthSections.length > 0
       ? monthSections[monthSections.length - 1].closingLabel
       : formatCurrency(closingCents)
 
-  const periodLabel = `${formatStatementStamp(since)} - ${formatStatementStamp(until)}`
+  const periodLabel = `${formatUsDate(since)} - ${formatUsDate(until)}`
   const filename = `apex-${months}mo-statement-${until.toISOString().slice(0, 10)}.pdf`
 
   const pdf = buildStatementPdf({

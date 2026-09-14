@@ -1,4 +1,4 @@
-/** Simple valid multi-page PDF (ASCII-only, no external deps). */
+/** US-style multi-page bank statement PDF (ASCII, Helvetica, fixed columns). */
 
 function toAscii(value: string) {
   return String(value || '')
@@ -11,6 +11,12 @@ function escapePdf(value: string) {
   return toAscii(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 }
 
+function clip(value: string, width: number) {
+  const text = toAscii(value)
+  if (text.length <= width) return text.padEnd(width)
+  return `${text.slice(0, Math.max(0, width - 2))}..`
+}
+
 function pageStream(lines: string[]) {
   const cmds = ['BT', '/F1 8 Tf', '36 760 Td', '10 TL']
   lines.forEach((line, i) => {
@@ -21,6 +27,14 @@ function pageStream(lines: string[]) {
   return cmds.join('\n')
 }
 
+export type StatementLine = {
+  date: string
+  reference: string
+  description: string
+  amountLabel: string
+  balanceLabel: string
+}
+
 export type StatementMonth = {
   label: string
   beginningLabel: string
@@ -29,7 +43,17 @@ export type StatementMonth = {
   debitsLabel: string
   netLabel: string
   count: number
-  transactions: Array<{ postedAt: string; description: string; amountLabel: string }>
+  transactions: StatementLine[]
+}
+
+function ledgerRow(line: StatementLine) {
+  return [
+    clip(line.date, 10),
+    clip(line.reference, 8),
+    clip(line.description, 28),
+    clip(line.amountLabel, 14).padStart(14),
+    clip(line.balanceLabel, 14).padStart(14),
+  ].join(' ')
 }
 
 export function buildStatementPdf(input: {
@@ -48,52 +72,60 @@ export function buildStatementPdf(input: {
   lastMonthClosingLabel: string
 }): Uint8Array {
   const months = input.months ?? 12
-  const body: string[] = []
+  const colHead = [
+    clip('Date', 10),
+    clip('Ref No.', 8),
+    clip('Description', 28),
+    '        Amount',
+    '       Balance',
+  ].join(' ')
 
+  const body: string[] = []
   for (const month of input.monthSections) {
     body.push('')
-    body.push(`======== ${month.label} ========`)
-    body.push(`Beginning balance ${month.beginningLabel}`)
-    body.push(`Posted items this month: ${month.count}`)
-    for (const t of month.transactions) {
-      const desc =
-        t.description.length > 38 ? t.description.slice(0, 35) + '...' : t.description
-      body.push(`${t.postedAt.padEnd(22)}${t.amountLabel.padStart(12)}  ${desc}`)
+    body.push(`${month.label.toUpperCase()}`)
+    body.push(`Beginning balance${''.padEnd(20)}${month.beginningLabel}`)
+    body.push(colHead)
+    body.push('-'.repeat(78))
+    if (month.transactions.length === 0) {
+      body.push('No posted items this month.')
+    } else {
+      for (const t of month.transactions) body.push(ledgerRow(t))
     }
-    body.push(`Month credits ${month.creditsLabel}`)
-    body.push(`Month debits ${month.debitsLabel}`)
-    body.push(`Month net ${month.netLabel}`)
-    body.push(`Closing balance ${month.closingLabel}`)
-    body.push('Check: beginning + net = closing')
+    body.push('-'.repeat(78))
+    body.push(`Total deposits / credits${''.padEnd(12)}${month.creditsLabel}`)
+    body.push(`Total withdrawals / debits${''.padEnd(10)}${month.debitsLabel}`)
+    body.push(`Items this month: ${month.count}`)
+    body.push(`Ending balance${''.padEnd(23)}${month.closingLabel}`)
+    body.push('Ending = beginning + deposits + withdrawals')
   }
 
   const header = [
-    `Apex Bank - ${months}-Month Account Statement`,
-    `Bank address: ${input.bankAddress}`,
+    `APEX BANK  ACCOUNT STATEMENT`,
+    `${months}-MONTH PERIOD  ${input.periodLabel}`,
+    `Bank: ${input.bankAddress}`,
     `Generated: ${input.generatedAt} CT`,
-    `Statement period: ${input.periodLabel} CT`,
-    `Account name: ${input.memberName}`,
+    `Account holder: ${input.memberName}`,
     `Mailing address: ${input.mailingAddress || 'Not on file'}`,
     `Routing number: ${input.routingNumber}`,
     '',
-    'Accounts (current balances)',
+    'ACCOUNT SUMMARY',
     ...input.accounts.map(
       (a) =>
-        `- ${a.name} (${a.type})  ****${a.lastFour}  Balance ${a.balanceLabel}`
+        `${clip(a.name, 22)}  ${clip(a.type, 10)}  ****${a.lastFour}  ${a.balanceLabel}`
     ),
     '',
-    `Posted transactions this period: ${input.totalInPeriod}`,
-    `Period beginning balance: ${input.periodOpeningLabel}`,
-    `Period closing balance: ${input.periodClosingLabel}`,
-    'Each month: closing = beginning + credits + debits.',
-    'Posted at (CT)         Amount        Description',
+    `Posted items this period: ${input.totalInPeriod}`,
+    `Beginning balance: ${input.periodOpeningLabel}`,
+    `Ending balance:    ${input.periodClosingLabel}`,
+    'Each line balance = prior balance + that item amount.',
   ]
 
   const footer = [
     '',
-    `End of statement - ${input.totalInPeriod} transactions`,
-    `Final monthly closing ${input.lastMonthClosingLabel} equals period closing ${input.periodClosingLabel}.`,
-    'Dates and times match posted ledger timestamps (Central Time).',
+    `End of statement. ${input.totalInPeriod} posted items.`,
+    `Final ending balance ${input.lastMonthClosingLabel} equals current balance ${input.periodClosingLabel}.`,
+    'Dates use Central Time. Member FDIC.',
     input.bankAddress,
   ]
 
@@ -102,16 +134,13 @@ export function buildStatementPdf(input: {
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) {
     const chunk = all.slice(i, i + PER)
-    if (pages.length > 0) {
-      chunk.push(`Page ${pages.length + 1}`)
-    }
+    if (pages.length > 0) chunk.push(`Page ${pages.length + 1}`)
     pages.push(chunk)
   }
   if (!pages.length) pages.push(['Apex Bank statement'])
 
   const n = pages.length
   const streams = pages.map(pageStream)
-
   const encoder = new TextEncoder()
   const chunks: Uint8Array[] = []
   const offsets: number[] = [0]
@@ -124,10 +153,8 @@ export function buildStatementPdf(input: {
   }
 
   push('%PDF-1.4\n')
-
   offsets.push(size)
   push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
-
   const kids = Array.from({ length: n }, (_, i) => `${3 + i} 0 R`).join(' ')
   offsets.push(size)
   push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`)
