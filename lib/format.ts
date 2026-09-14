@@ -67,6 +67,22 @@ export function chicagoMonthKey(date: Date | string) {
   return `${year}-${month}`
 }
 
+export function formatMailingAddress(addr: {
+  addressLine1?: string | null
+  addressLine2?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+}) {
+  const line1 = String(addr.addressLine1 || '').trim()
+  const line2 = String(addr.addressLine2 || '').trim()
+  const city = String(addr.city || '').trim()
+  const state = String(addr.state || '').trim().toUpperCase()
+  const zip = String(addr.postalCode || '').trim()
+  const cityState = [city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  return [line1, line2, cityState].filter(Boolean).join(', ')
+}
+
 export function transactionReference(id: number) {
   return `APX${String(id).padStart(10, '0')}`
 }
