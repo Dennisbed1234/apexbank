@@ -11,6 +11,8 @@ import { ApexLogo } from '@/components/apex-logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 
+const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
+
 export function DashboardHeader({
   name,
   email,
@@ -22,6 +24,7 @@ export function DashboardHeader({
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [emailing, setEmailing] = useState(false)
+  const [months, setMonths] = useState(12)
   const menuRef = useRef<HTMLDivElement>(null)
   const safeName = name?.trim() || 'Account'
   const safeEmail = email?.trim() || ''
@@ -71,7 +74,9 @@ export function DashboardHeader({
     setOpen(false)
     setDownloading(true)
     try {
-      const res = await fetch('/api/statement', { credentials: 'include' })
+      const res = await fetch(`/api/statement?months=${months}`, {
+        credentials: 'include',
+      })
       if (!res.ok) {
         toast.error('Could not download statement')
         return
@@ -80,12 +85,12 @@ export function DashboardHeader({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `apex-12mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
+      a.download = `apex-${months}mo-statement-${new Date().toISOString().slice(0, 10)}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      toast.success('Statement downloaded')
+      toast.success(`${months}-month statement downloaded`)
     } catch {
       toast.error('Download failed. Try again.')
     } finally {
@@ -97,12 +102,12 @@ export function DashboardHeader({
     setOpen(false)
     setEmailing(true)
     try {
-      const result = await emailMyStatement()
+      const result = await emailMyStatement(months)
       if (!result.ok) {
         toast.error(result.error)
         return
       }
-      toast.success(`Statement emailed to ${safeEmail || 'your inbox'}`)
+      toast.success(`${months}-month statement emailed to ${safeEmail || 'your inbox'}`)
     } catch {
       toast.error('Could not email statement.')
     } finally {
@@ -152,6 +157,20 @@ export function DashboardHeader({
                 <Settings className="size-4" />
                 Settings
               </Link>
+              <label className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm">
+                <span>Statement period</span>
+                <select
+                  value={months}
+                  onChange={(e) => setMonths(Number(e.target.value))}
+                  className="rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+                >
+                  {PERIODS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} month{n === 1 ? '' : 's'}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 disabled={downloading}
@@ -159,7 +178,7 @@ export function DashboardHeader({
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
               >
                 <FileText className="size-4" />
-                {downloading ? 'Preparing PDF…' : '12-month statement (PDF)'}
+                {downloading ? 'Preparing PDF…' : `Download ${months}-month PDF`}
               </button>
               <button
                 type="button"
@@ -168,7 +187,7 @@ export function DashboardHeader({
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
               >
                 <Mail className="size-4" />
-                {emailing ? 'Emailing PDF…' : 'Email me PDF statement'}
+                {emailing ? 'Emailing PDF…' : `Email ${months}-month PDF`}
               </button>
               {isAdmin && (
                 <Link
