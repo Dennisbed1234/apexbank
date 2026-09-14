@@ -9,6 +9,11 @@ export async function ensureUserProfileColumns() {
   try {
     await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phone" text`)
     await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "dateOfBirth" text`)
+    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine1" text`)
+    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine2" text`)
+    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "city" text`)
+    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "state" text`)
+    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "postalCode" text`)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS outbound_payment (
         id serial PRIMARY KEY,

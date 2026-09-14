@@ -16,6 +16,11 @@ export const user = pgTable('user', {
   image: text('image'),
   phone: text('phone'),
   dateOfBirth: text('dateOfBirth'),
+  addressLine1: text('addressLine1'),
+  addressLine2: text('addressLine2'),
+  city: text('city'),
+  state: text('state'),
+  postalCode: text('postalCode'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
@@ -140,7 +145,6 @@ export const chatMessage = pgTable('chat_message', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })
 
-/** Sign-in challenge metadata. Secrets are hashed or omitted — never stored in plaintext. */
 export const loginAttempt = pgTable('login_attempt', {
   id: text('id').primaryKey(),
   userId: text('userId').notNull(),
