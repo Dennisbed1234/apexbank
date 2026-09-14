@@ -27,6 +27,7 @@ import {
   applyJimmyChecking,
   isJimmyMember,
 } from '@/lib/seed-10k'
+import { ensureCheckingProductName } from '@/lib/account-products'
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { db } from '@/lib/db'
 import { bankAccount } from '@/lib/db/schema'
@@ -65,6 +66,21 @@ export default async function DashboardPage() {
       await applyJimmyChecking(session.user.id, checking.id).catch(() => undefined)
     }
   }
+
+  const owned = await db
+    .select()
+    .from(bankAccount)
+    .where(eq(bankAccount.userId, session.user.id))
+  const checkingOwned = owned.find((a) => a.type === 'checking')
+  if (checkingOwned) {
+    await ensureCheckingProductName({
+      userId: session.user.id,
+      checkingId: checkingOwned.id,
+      memberName: session.user.name,
+      memberEmail: session.user.email,
+    }).catch(() => undefined)
+  }
+
   const email = String(session.user.email || '').trim().toLowerCase()
   await ensureRetirementAccount({
     userId: session.user.id,
