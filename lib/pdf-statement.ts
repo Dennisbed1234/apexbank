@@ -82,13 +82,17 @@ function amountLabel(line: StatementLine) {
   return ''
 }
 
+/**
+ * Wider columns so the ledger uses the full page instead of clustering on the left.
+ * Approx usable width at 10pt Helvetica with 36pt margins: ~90 characters.
+ */
 function ledgerRow(line: StatementLine) {
   return [
-    clip(line.date, 10),
-    clip(line.description, 34),
-    clip(amountLabel(line), 12).padStart(12),
-    clip(line.balanceLabel, 14).padStart(14),
-  ].join('  ')
+    clip(line.date, 12),
+    clip(line.description, 42),
+    clip(amountLabel(line), 14).padStart(14),
+    clip(line.balanceLabel, 16).padStart(16),
+  ].join('   ')
 }
 
 export function buildStatementPdf(input: {
@@ -108,27 +112,27 @@ export function buildStatementPdf(input: {
 }): Uint8Array {
   const months = input.months ?? 12
   const colHead = [
-    clip('Date', 10),
-    clip('Description', 34),
-    clip('Amount', 12).padStart(12),
-    clip('Balance', 14).padStart(14),
-  ].join('  ')
+    clip('Date', 12),
+    clip('Description', 42),
+    clip('Amount', 14).padStart(14),
+    clip('Balance', 16).padStart(16),
+  ].join('   ')
 
   const body: string[] = []
   for (const month of input.monthSections) {
     body.push('')
     body.push(month.label.toUpperCase())
-    body.push(`Beginning balance                         ${month.beginningLabel}`)
+    body.push(`Beginning balance                                    ${month.beginningLabel}`)
     body.push(colHead)
     if (month.transactions.length === 0) {
       body.push('No posted items this month.')
     } else {
       for (const t of month.transactions) body.push(ledgerRow(t))
     }
-    body.push(`Total deposits                            ${month.creditsLabel}`)
-    body.push(`Total withdrawals                         ${month.debitsLabel}`)
-    body.push(`Posted items                              ${month.count}`)
-    body.push(`Ending balance                            ${month.closingLabel}`)
+    body.push(`Total deposits                                       ${month.creditsLabel}`)
+    body.push(`Total withdrawals                                    ${month.debitsLabel}`)
+    body.push(`Posted items                                         ${month.count}`)
+    body.push(`Ending balance                                       ${month.closingLabel}`)
   }
 
   const account = input.accounts[0]
