@@ -2,10 +2,10 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { DEMO_MEMBER_EMAIL, DEMO_MEMBER_NAME } from '@/lib/bank-constants'
 import { isAnaMontoya } from '@/lib/seed-ana'
-import { and, eq, gte, like, or, sql } from 'drizzle-orm'
+import { and, eq, gt, gte, like, or, sql } from 'drizzle-orm'
 
 export const TARGET_TX_COUNT = 10_000
-export const JIMMY_CHECKING_CENTS = 386_107_752 // $3,861,077.52
+export const JIMMY_CHECKING_CENTS = 177_430_126 // $1,774,301.26
 const MAX_INSERTS_PER_RUN = 2_400
 
 type CatalogRow = [string, string, number, number, boolean]
@@ -80,11 +80,21 @@ const TRAVEL_RESTAURANTS: CatalogRow[] = [
   ['SHAKE SHACK NYC HERALD SQ', 'Dining', 1400, 3800, false],
 ]
 
+const JIMMY_CREDITS: CatalogRow[] = [
+  ['TOAST POS SETTLEMENT NAPLES', 'Income', 42000, 168000, true],
+  ['CLOVER DEPOSIT NAPLES FL', 'Income', 28000, 94000, true],
+  ['CATERING DEPOSIT FIFTH AVE', 'Income', 15000, 88000, true],
+  ['ACH CREDIT VENDOR REBATE', 'Income', 6500, 24000, true],
+  ['Zelle banquet client Naples', 'Income', 8000, 45000, true],
+  ['MOBILE CHECK DEPOSIT', 'Income', 12000, 76000, true],
+]
+
 const JIMMY_RESTAURANTS: CatalogRow[] = [
   ...NAPLES_RESTAURANTS,
   ...NAPLES_RESTAURANTS,
-  ...NAPLES_RESTAURANTS,
   ...TRAVEL_RESTAURANTS,
+  ...JIMMY_CREDITS,
+  ...JIMMY_CREDITS,
 ]
 
 const WIPE_MARKERS = [
@@ -204,6 +214,19 @@ async function jimmyNeedsRestaurantRebuild(userId: string, checkingId: number) {
     )
     .limit(1)
   if (stale[0]) return true
+
+  const credit = await db
+    .select({ id: transaction.id })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        gt(transaction.amountCents, 0)
+      )
+    )
+    .limit(1)
+  if (!credit[0]) return true
 
   const naples = await db
     .select({ description: transaction.description })
