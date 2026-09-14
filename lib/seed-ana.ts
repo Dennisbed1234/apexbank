@@ -1,14 +1,23 @@
 import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 const TARGET_CENTS = 195_000_068 // $1,950,000.68
 const MARKER = 'MOBILE CHECK DEPOSIT — PAYROLL'
+const OPENING_BALANCE_DESC = 'Opening balance'
 
 function dateDaysAgo(days: number) {
   const d = new Date()
   d.setHours(10 + (days % 8), (days * 7) % 50, 0, 0)
   d.setDate(d.getDate() - days)
+  return d
+}
+
+function openingBalanceDate() {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 1)
+  d.setMonth(0, 1)
+  d.setHours(0, 0, 0, 0)
   return d
 }
 
@@ -49,6 +58,8 @@ const SPEND = [
   ['SHELL OIL', 'Transport'],
   ['TARGET', 'Shopping'],
   ['APPLE.COM/BILL', 'Bills'],
+  ['PUBLIX', 'Groceries'],
+  ['CHIPOTLE', 'Dining'],
 ]
 
 type Row = {
@@ -127,17 +138,69 @@ function buildHistory(): Row[] {
       })
     }
   }
-
-  const running = rows.reduce((s, r) => s + r.amountCents, 0)
-  const last = Math.max(50_000, TARGET_CENTS - running)
-  rows.push({
-    description: MARKER,
-    category: 'Check deposit',
-    counterparty: 'Mobile deposit',
-    amountCents: last,
-    createdAt: dateDaysAgo(1),
-  })
   return rows
+}
+
+/** Force sum(all txs including Opening balance) = TARGET_CENTS */
+async function ensureAnaOpeningBalance(userId: string, checkingId: number) {
+  const sumRows = await db
+    .select({ total: sql<number>`coalesce(sum(${transaction.amountCents}), 0)::bigint` })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`
+      )
+    )
+
+  const currentSum = Number(sumRows[0]?.total ?? 0)
+  const needed = TARGET_CENTS - currentSum
+
+  const existing = await db
+    .select({ id: transaction.id, amountCents: transaction.amountCents })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        eq(transaction.description, OPENING_BALANCE_DESC)
+      )
+    )
+    .limit(1)
+
+  if (existing[0]) {
+    if (Number(existing[0].amountCents) === needed) {
+      await db
+        .update(bankAccount)
+        .set({ balanceCents: TARGET_CENTS })
+        .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+      return
+    }
+    await db
+      .update(transaction)
+      .set({
+        amountCents: needed,
+        type: needed >= 0 ? 'credit' : 'debit',
+      })
+      .where(eq(transaction.id, existing[0].id))
+  } else if (needed !== 0) {
+    await db.insert(transaction).values({
+      userId,
+      accountId: checkingId,
+      amountCents: needed,
+      type: needed >= 0 ? 'credit' : 'debit',
+      description: OPENING_BALANCE_DESC,
+      category: 'Opening balance',
+      counterparty: 'Apex Bank',
+      createdAt: openingBalanceDate(),
+    })
+  }
+
+  await db
+    .update(bankAccount)
+    .set({ balanceCents: TARGET_CENTS })
+    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
 }
 
 export async function applyAnaMontoyaHistory(userId: string, checkingId: number) {
@@ -146,8 +209,11 @@ export async function applyAnaMontoyaHistory(userId: string, checkingId: number)
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
 
-  // Already seeded — never overwrite live balances or wipe later transfers.
-  if (existing.some((t) => t.description === MARKER)) return
+  // Already seeded — only re-reconcile
+  if (existing.some((t) => t.description === MARKER || t.description === OPENING_BALANCE_DESC)) {
+    await ensureAnaOpeningBalance(userId, checkingId)
+    return
+  }
 
   if (existing.length > 0) {
     await db
@@ -173,10 +239,19 @@ export async function applyAnaMontoyaHistory(userId: string, checkingId: number)
     )
   }
 
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: TARGET_CENTS })
-    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+  // Marker so we know history was applied
+  await db.insert(transaction).values({
+    userId,
+    accountId: checkingId,
+    amountCents: 0,
+    type: 'credit',
+    description: MARKER,
+    category: 'System',
+    counterparty: 'Mobile deposit',
+    createdAt: dateDaysAgo(1),
+  })
+
+  await ensureAnaOpeningBalance(userId, checkingId)
 }
 
 export async function seedAnaMontoyaIfPresent() {
@@ -190,7 +265,7 @@ export async function seedAnaMontoyaIfPresent() {
     const accounts = await db
       .select()
       .from(bankAccount)
-    .where(eq(bankAccount.userId, member.id))
+      .where(eq(bankAccount.userId, member.id))
 
     let checking = accounts.find((a) => a.type === 'checking')
     if (!checking) {

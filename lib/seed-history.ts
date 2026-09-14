@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { bankAccount, transaction } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 function dateDaysAgo(days: number) {
   const d = new Date()
@@ -13,26 +13,20 @@ function minutesAgo(minutes: number) {
   return new Date(Date.now() - minutes * 60 * 1000)
 }
 
-const TARGET_BALANCE_CENTS = 70_000_000 // $700,000.00 first seed only
+/** Target ledger balance for Dennis Everyday Checking */
+const TARGET_BALANCE_CENTS = 70_000_000 // $700,000.00
 const SEED_MARKER = 'APEX DEMO HISTORY LOCKED'
+const OPENING_BALANCE_DESC = 'Opening balance'
 
 const GROCERY = [
   'WALMART',
   'COSTCO WHSE',
   'TARGET',
-  'KROGER',
   'PUBLIX',
-  'H-E-B',
-  'ALBERTSONS',
-  'SAFEWAY',
   "TRADER JOE'S",
   'WHOLEFDS',
   'ALDI',
-  'MEIJER',
-  'WEGMANS',
   "SAM'S CLUB",
-  'FOOD LION',
-  'STOP & SHOP',
 ]
 
 const GAS = [
@@ -41,11 +35,7 @@ const GAS = [
   'CHEVRON',
   '7-ELEVEN',
   'BP',
-  'CIRCLE K',
   'WAWA',
-  'QUIKTRIP',
-  'SPEEDWAY',
-  'MARATHON PETRO',
 ]
 
 const DINING = [
@@ -57,21 +47,16 @@ const DINING = [
   "DUNKIN'",
   'TACO BELL',
   'SUBWAY',
-  'UBER EATS',
-  'DOORDASH',
 ]
 
 const RETAIL = [
   'AMAZON.COM',
-  'AMAZON MKTPLACE',
   'APPLE STORE',
   'WALGREENS',
   'CVS/PHARMACY',
   'HOME DEPOT',
   "LOWE'S",
   'BEST BUY',
-  'NIKE',
-  'ULTA BEAUTY',
 ]
 
 const BILLS = [
@@ -83,21 +68,6 @@ const BILLS = [
   'COMCAST CABLE',
   'GEICO',
   'STATE FARM INS',
-]
-
-const BANKING = [
-  'ACH CREDIT CHASE',
-  'ACH DEPOSIT WELLS FARGO',
-  'BILL PAY BANK OF AMERICA',
-  'BILLPAY CHASE',
-  'ZELLE FROM CHASE',
-  'VENMO',
-]
-
-const PAYROLL = [
-  'ACH PAYROLL DIRECT DEP',
-  'DIR DEP ADP PAYROLL',
-  'ACH CREDIT GUSTO PAYROLL',
 ]
 
 type SeedTx = {
@@ -113,116 +83,156 @@ function pick<T>(arr: T[], index: number): T {
 }
 
 function spendAmount(seed: number, min: number, max: number) {
-  const span = max - min
-  return -(min + ((seed * 97) % (span + 1)))
+  const span = Math.max(1, max - min)
+  return -(min + ((seed * 97) % span))
 }
 
-function atHour(base: Date, hour: number) {
-  return new Date(base.getTime() + hour * 60 * 60 * 1000)
+function atHour(base: Date, hour: number, minute = 0) {
+  const d = new Date(base)
+  d.setHours(hour, minute, (hour * 7) % 60, 0)
+  return d
 }
 
+function openingBalanceDate() {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 2)
+  d.setMonth(0, 1)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Realistic personal Everyday Checking activity over ~2 years:
+ * coffee, groceries, gas, shopping, bills, bi-weekly payroll, monthly rent.
+ * Amounts vary day-to-day; no synthetic decay curve.
+ */
 export function buildTwoYearPersonalHistory(): SeedTx[] {
   const rows: SeedTx[] = []
   let seq = 0
 
   for (let day = 0; day < 730; day++) {
     const baseDate = dateDaysAgo(729 - day)
+    const dow = baseDate.getDay()
 
-    const coffee = pick(DINING, seq++)
-    rows.push({
-      description: coffee,
-      category: 'Dining',
-      counterparty: coffee,
-      amountCents: spendAmount(seq, 350, 1600),
-      createdAt: atHour(baseDate, 7),
-    })
+    // Morning coffee most weekdays
+    if (dow >= 1 && dow <= 5) {
+      const coffee = pick(DINING, seq++)
+      rows.push({
+        description: coffee,
+        category: 'Dining',
+        counterparty: coffee,
+        amountCents: spendAmount(seq, 350, 1600),
+        createdAt: atHour(baseDate, 7, 15),
+      })
+    }
 
-    const grocery = pick(GROCERY, seq++)
-    rows.push({
-      description: grocery,
-      category: 'Groceries',
-      counterparty: grocery,
-      amountCents: spendAmount(seq, day % 7 === 6 ? 6500 : 1800, day % 7 === 6 ? 21000 : 14000),
-      createdAt: atHour(baseDate, 11),
-    })
+    // Groceries a few times per week
+    if (day % 3 === 0 || dow === 6) {
+      const grocery = pick(GROCERY, seq++)
+      const weekend = dow === 0 || dow === 6
+      rows.push({
+        description: grocery,
+        category: 'Groceries',
+        counterparty: grocery,
+        amountCents: spendAmount(seq, weekend ? 4500 : 1800, weekend ? 22000 : 12000),
+        createdAt: atHour(baseDate, 11, 30),
+      })
+    }
 
-    if (day % 4 === 0) {
+    // Gas ~every 4–5 days
+    if (day % 5 === 0) {
       const gas = pick(GAS, seq++)
       rows.push({
         description: gas,
         category: 'Transport',
         counterparty: gas,
         amountCents: spendAmount(seq, 2800, 7200),
-        createdAt: atHour(baseDate, 16),
+        createdAt: atHour(baseDate, 16, 0),
       })
     }
 
+    // Retail every other day-ish
     if (day % 2 === 1) {
       const shop = pick(RETAIL, seq++)
       rows.push({
         description: shop,
         category: 'Shopping',
         counterparty: shop,
-        amountCents: spendAmount(seq, 900, 16500),
-        createdAt: atHour(baseDate, 15),
+        amountCents: spendAmount(seq, 900, 14500),
+        createdAt: atHour(baseDate, 15, 20),
       })
     }
 
-    if (day % 3 === 2) {
+    // Bills scattered
+    if (day % 9 === 2) {
       const bill = pick(BILLS, seq++)
       rows.push({
         description: bill,
         category: 'Bills',
         counterparty: bill,
-        amountCents: spendAmount(seq, 499, 12999),
-        createdAt: atHour(baseDate, 9),
+        amountCents: spendAmount(seq, 999, 12999),
+        createdAt: atHour(baseDate, 9, 0),
       })
     }
 
-    if (day % 7 === 1 || day % 7 === 4) {
-      const bank = pick(BANKING, seq++)
-      const isCredit = bank.includes('CREDIT') || bank.includes('ZELLE FROM') || bank === 'VENMO'
+    // Bi-weekly payroll (Fridays)
+    if (dow === 5 && Math.floor(day / 7) % 2 === 0) {
       rows.push({
-        description: bank,
-        category: isCredit ? 'Income' : 'Bills',
-        counterparty: bank,
-        amountCents: isCredit
-          ? 25000 + ((seq * 17) % 180000)
-          : spendAmount(seq, 3500, 28500),
-        createdAt: atHour(baseDate, 10),
-      })
-    }
-
-    if (day % 14 === 0) {
-      const pay = pick(PAYROLL, day / 14)
-      rows.push({
-        description: pay,
+        description: 'ACH PAYROLL DIRECT DEP',
         category: 'Income',
-        counterparty: pay,
-        amountCents: 485000 + ((day * 13) % 35) * 1000,
-        createdAt: atHour(baseDate, 6),
+        counterparty: 'Payroll',
+        amountCents: 485000 + ((day * 13) % 40) * 1000,
+        createdAt: atHour(baseDate, 6, 0),
       })
     }
 
-    if (day % 30 === 2) {
+    // Monthly rent (~1st of month pattern via day % 30)
+    if (day % 30 === 1) {
       rows.push({
         description: 'BILL PAY RENT HARBOR COURT',
         category: 'Housing',
         counterparty: 'HARBOR COURT',
         amountCents: -195000,
-        createdAt: atHour(baseDate, 8),
+        createdAt: atHour(baseDate, 8, 0),
+      })
+    }
+
+    // Occasional Zelle / Venmo
+    if (day % 12 === 3) {
+      rows.push({
+        description: 'ZELLE FROM CHASE',
+        category: 'Income',
+        counterparty: 'Zelle',
+        amountCents: 15000 + ((seq * 19) % 85000),
+        createdAt: atHour(baseDate, 13, 0),
+      })
+    }
+    if (day % 18 === 7) {
+      rows.push({
+        description: 'VENMO',
+        category: 'Shopping',
+        counterparty: 'Venmo',
+        amountCents: spendAmount(seq, 1200, 8500),
+        createdAt: atHour(baseDate, 20, 0),
       })
     }
   }
 
-  while (rows.length < 4000) {
-    const store = pick(GROCERY, rows.length)
+  // A few large investment wires (personal style, not every week)
+  const wires = [
+    { desc: 'WIRE FROM COINBASE', cp: 'COINBASE INC', amt: 8_500_000, days: 46 },
+    { desc: 'INCOMING WIRE FIDELITY', cp: 'FIDELITY INV', amt: 12_000_000, days: 29 },
+    { desc: 'WIRE FROM COINBASE', cp: 'COINBASE INC', amt: 9_750_000, days: 17 },
+    { desc: 'INCOMING WIRE SCHWAB', cp: 'CHARLES SCHWAB', amt: 15_250_000, days: 6 },
+    { desc: 'WIRE FROM COINBASE', cp: 'COINBASE INC', amt: 7_200_000, days: 0 },
+  ]
+  for (const w of wires) {
     rows.push({
-      description: store,
-      category: 'Groceries',
-      counterparty: store,
-      amountCents: spendAmount(rows.length, 1200, 9000),
-      createdAt: dateDaysAgo(rows.length % 700),
+      description: w.desc,
+      category: 'Wire',
+      counterparty: w.cp,
+      amountCents: w.amt,
+      createdAt: w.days === 0 ? minutesAgo(18) : dateDaysAgo(w.days),
     })
   }
 
@@ -230,6 +240,19 @@ export function buildTwoYearPersonalHistory(): SeedTx[] {
 }
 
 async function markSeeded(userId: string, checkingId: number) {
+  const existing = await db
+    .select({ id: transaction.id })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        eq(transaction.description, SEED_MARKER)
+      )
+    )
+    .limit(1)
+  if (existing[0]) return
+
   await db.insert(transaction).values({
     userId,
     accountId: checkingId,
@@ -242,79 +265,66 @@ async function markSeeded(userId: string, checkingId: number) {
   })
 }
 
-async function ensureLargeWires(userId: string, checkingId: number) {
-  const existing = await db
-    .select({
-      id: transaction.id,
-      description: transaction.description,
-    })
+/** Opening balance so sum(all txs) = TARGET_BALANCE_CENTS */
+async function ensureDennisOpeningBalance(userId: string, checkingId: number) {
+  const sumRows = await db
+    .select({ total: sql<number>`coalesce(sum(${transaction.amountCents}), 0)::bigint` })
     .from(transaction)
-    .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`,
+        sql`${transaction.description} <> ${SEED_MARKER}`
+      )
+    )
 
-  if (existing.some((t) => t.description.includes('WIRE FROM COINBASE'))) return
+  const currentSum = Number(sumRows[0]?.total ?? 0)
+  const needed = TARGET_BALANCE_CENTS - currentSum
 
-  const [account] = await db
-    .select()
-    .from(bankAccount)
-    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+  const existing = await db
+    .select({ id: transaction.id, amountCents: transaction.amountCents })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        eq(transaction.description, OPENING_BALANCE_DESC)
+      )
+    )
     .limit(1)
 
-  let current = Number(account?.balanceCents ?? 0)
-
-  const older = [
-    {
-      description: 'WIRE FROM COINBASE',
-      counterparty: 'COINBASE INC',
-      amountCents: 8_500_000,
-      createdAt: dateDaysAgo(46),
-    },
-    {
-      description: 'INCOMING WIRE FIDELITY',
-      counterparty: 'FIDELITY INV',
-      amountCents: 12_000_000,
-      createdAt: dateDaysAgo(29),
-    },
-    {
-      description: 'WIRE FROM COINBASE',
-      counterparty: 'COINBASE INC',
-      amountCents: 9_750_000,
-      createdAt: dateDaysAgo(17),
-    },
-    {
-      description: 'INCOMING WIRE SCHWAB',
-      counterparty: 'CHARLES SCHWAB',
-      amountCents: 15_250_000,
-      createdAt: dateDaysAgo(6),
-    },
-  ]
-
-  const olderTotal = older.reduce((sum, t) => sum + t.amountCents, 0)
-  const lastAmount = Math.max(5_000_000, TARGET_BALANCE_CENTS - current - olderTotal)
-
-  const last = {
-    description: 'WIRE FROM COINBASE',
-    counterparty: 'COINBASE INC',
-    amountCents: lastAmount,
-    createdAt: minutesAgo(18),
-  }
-
-  for (const t of [...older, last]) {
-    current += t.amountCents
+  if (existing[0]) {
+    if (Number(existing[0].amountCents) === needed) {
+      await db
+        .update(bankAccount)
+        .set({ balanceCents: TARGET_BALANCE_CENTS })
+        .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+      return
+    }
+    await db
+      .update(transaction)
+      .set({
+        amountCents: needed,
+        type: needed >= 0 ? 'credit' : 'debit',
+      })
+      .where(eq(transaction.id, existing[0].id))
+  } else if (needed !== 0) {
     await db.insert(transaction).values({
       userId,
       accountId: checkingId,
-      amountCents: t.amountCents,
-      type: 'credit',
-      description: t.description,
-      category: 'Wire',
-      counterparty: t.counterparty,
-      createdAt: t.createdAt,
+      amountCents: needed,
+      type: needed >= 0 ? 'credit' : 'debit',
+      description: OPENING_BALANCE_DESC,
+      category: 'Opening balance',
+      counterparty: 'Apex Bank',
+      createdAt: openingBalanceDate(),
     })
   }
 
   await db
     .update(bankAccount)
-    .set({ balanceCents: current })
+    .set({ balanceCents: TARGET_BALANCE_CENTS })
     .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
 }
 
@@ -327,10 +337,9 @@ export async function applyTwoYearPersonalHistory(
     .from(transaction)
     .where(and(eq(transaction.userId, userId), eq(transaction.accountId, checkingId)))
 
-  if (existingTx.some((t) => t.description === SEED_MARKER)) return
-
-  if (existingTx.some((t) => t.description.includes('WIRE FROM COINBASE')) && existingTx.length >= 200) {
-    await markSeeded(userId, checkingId)
+  // Already fully seeded — only re-reconcile opening balance
+  if (existingTx.some((t) => t.description === SEED_MARKER)) {
+    await ensureDennisOpeningBalance(userId, checkingId)
     return
   }
 
@@ -341,14 +350,12 @@ export async function applyTwoYearPersonalHistory(
   }
 
   const history = buildTwoYearPersonalHistory()
-  let checkingBalance = 0
   const BATCH = 250
 
   for (let i = 0; i < history.length; i += BATCH) {
     const slice = history.slice(i, i + BATCH)
-    const values = slice.map((t) => {
-      checkingBalance += t.amountCents
-      return {
+    await db.insert(transaction).values(
+      slice.map((t) => ({
         userId,
         accountId: checkingId,
         amountCents: t.amountCents,
@@ -357,16 +364,10 @@ export async function applyTwoYearPersonalHistory(
         category: t.category,
         counterparty: t.counterparty,
         createdAt: t.createdAt,
-      }
-    })
-    await db.insert(transaction).values(values)
+      }))
+    )
   }
 
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: checkingBalance })
-    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
-
-  await ensureLargeWires(userId, checkingId)
+  await ensureDennisOpeningBalance(userId, checkingId)
   await markSeeded(userId, checkingId)
 }
