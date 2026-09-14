@@ -6,6 +6,7 @@ import {
   CreditCard,
   Trees,
 } from 'lucide-react'
+import { BANK_NAME } from '@/lib/bank-constants'
 
 const features = [
   {
@@ -49,7 +50,7 @@ export function Features() {
             Everything you need, nothing you don't.
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            Apex Bank brings your entire financial life into one place, with the
+            {BANK_NAME} brings your entire financial life into one place, with the
             tools to help your money grow.
           </p>
         </div>

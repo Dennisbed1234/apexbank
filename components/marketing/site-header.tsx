@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ApexLogo } from '@/components/apex-logo'
+import { BANK_NAME } from '@/lib/bank-constants'
 
 export function SiteHeader() {
   return (
@@ -9,15 +10,15 @@ export function SiteHeader() {
         <Link href="/" className="flex items-center gap-2">
           <ApexLogo className="h-7 w-7 text-primary" />
           <span className="text-lg font-bold tracking-tight text-foreground">
-            Apex Bank
+            {BANK_NAME}
           </span>
         </Link>
-<Link
-  href="/about"
-  className="text-sm font-medium text-muted-foreground md:hidden"
->
-  About
-</Link>
+        <Link
+          href="/about"
+          className="text-sm font-medium text-muted-foreground md:hidden"
+        >
+          About
+        </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
           <a

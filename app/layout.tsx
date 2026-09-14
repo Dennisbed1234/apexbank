@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Manrope } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { ChatSupport } from '@/components/chat-support'
+import { BANK_NAME } from '@/lib/bank-constants'
 import './globals.css'
 
 const manrope = Manrope({
@@ -13,23 +14,23 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   metadataBase: new URL('https://apex-bank-theta.vercel.app'),
   title: {
-    default: 'Apex Bank — Banking that works for you',
-    template: '%s — Apex Bank',
+    default: `${BANK_NAME} — Banking that works for you`,
+    template: `%s — ${BANK_NAME}`,
   },
   description:
-    'Apex Bank is the modern way to bank: fee-free checking, high-yield savings, instant transfers, and real-time insights into your money.',
+    `${BANK_NAME} is the modern way to bank: fee-free checking, high-yield savings, instant transfers, and real-time insights into your money.`,
   generator: 'v0.app',
   openGraph: {
-    title: 'Apex Bank — Banking that works for you',
+    title: `${BANK_NAME} — Banking that works for you`,
     description:
       'Fee-free checking, high-yield savings, and instant transfers — all in one simple app.',
     url: 'https://apex-bank-theta.vercel.app',
-    siteName: 'Apex Bank',
+    siteName: BANK_NAME,
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Apex Bank — Banking that works for you',
+    title: `${BANK_NAME} — Banking that works for you`,
     description:
       'Fee-free checking, high-yield savings, and instant transfers — all in one simple app.',
   },
