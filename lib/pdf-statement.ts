@@ -1,4 +1,10 @@
-/** US-style multi-page checking statement. */
+/** US-style multi-page checking statement with Nicolet logo header. */
+
+import {
+  NICOLET_LOGO_HEIGHT,
+  NICOLET_LOGO_JPEG_B64,
+  NICOLET_LOGO_WIDTH,
+} from '@/lib/nicolet-logo-jpeg'
 
 function toAscii(value: string) {
   return String(value || '')
@@ -17,8 +23,25 @@ function clip(value: string, width: number) {
   return `${text.slice(0, Math.max(0, width - 2))}..`
 }
 
+function jpegBytes() {
+  return Buffer.from(NICOLET_LOGO_JPEG_B64, 'base64')
+}
+
 function pageStream(lines: string[]) {
-  const cmds = ['BT', '/F1 10 Tf', '40 742 Td', '14 TL']
+  const logoW = 168
+  const logoH = (logoW * NICOLET_LOGO_HEIGHT) / NICOLET_LOGO_WIDTH
+  const logoY = 792 - 28 - logoH
+  const textY = logoY - 18
+  const cmds = [
+    'q',
+    `${logoW.toFixed(2)} 0 0 ${logoH.toFixed(2)} 36 ${logoY.toFixed(2)} cm`,
+    '/Im1 Do',
+    'Q',
+    'BT',
+    '/F1 10 Tf',
+    `36 ${textY.toFixed(2)} Td`,
+    '14 TL',
+  ]
   lines.forEach((line, i) => {
     if (i > 0) cmds.push('T*')
     cmds.push(`(${escapePdf(line)}) Tj`)
@@ -103,7 +126,6 @@ export function buildStatementPdf(input: {
 
   const account = input.accounts[0]
   const header = [
-    'NICOLET NATIONAL BANK',
     'BUSINESS CHECKING STATEMENT',
     `${months}-month period  ${input.periodLabel}`,
     `Generated ${input.generatedAt} CT`,
@@ -131,7 +153,7 @@ export function buildStatementPdf(input: {
   ]
 
   const all = [...header, ...body, ...footer]
-  const PER = 46
+  const PER = 40
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) {
     const chunk = all.slice(i, i + PER)
@@ -142,6 +164,7 @@ export function buildStatementPdf(input: {
 
   const n = pages.length
   const streams = pages.map(pageStream)
+  const image = jpegBytes()
   const encoder = new TextEncoder()
   const chunks: Uint8Array[] = []
   const offsets: number[] = [0]
@@ -153,6 +176,11 @@ export function buildStatementPdf(input: {
     size += bytes.length
   }
 
+  function pushBytes(bytes: Uint8Array) {
+    chunks.push(bytes)
+    size += bytes.length
+  }
+
   push('%PDF-1.4\n')
   offsets.push(size)
   push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
@@ -160,12 +188,14 @@ export function buildStatementPdf(input: {
   offsets.push(size)
   push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`)
 
+  const fontId = 3 + 2 * n
+  const imageId = fontId + 1
+
   for (let i = 0; i < n; i++) {
     const contentId = 3 + n + i
-    const fontId = 3 + 2 * n
     offsets.push(size)
     push(
-      `${3 + i} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>\nendobj\n`
+      `${3 + i} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> /XObject << /Im1 ${imageId} 0 R >> >> >>\nendobj\n`
     )
   }
 
@@ -176,12 +206,18 @@ export function buildStatementPdf(input: {
     push(`${3 + n + i} 0 obj\n<< /Length ${len} >>\nstream\n${stream}\nendstream\nendobj\n`)
   }
 
-  const fontId = 3 + 2 * n
   offsets.push(size)
   push(`${fontId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`)
 
+  offsets.push(size)
+  push(
+    `${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${NICOLET_LOGO_WIDTH} /Height ${NICOLET_LOGO_HEIGHT} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.length} >>\nstream\n`
+  )
+  pushBytes(image)
+  push('\nendstream\nendobj\n')
+
   const xrefStart = size
-  const objCount = fontId
+  const objCount = imageId
   push(`xref\n0 ${objCount + 1}\n`)
   push('0000000000 65535 f \n')
   for (let i = 1; i <= objCount; i++) {
