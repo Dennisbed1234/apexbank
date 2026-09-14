@@ -1,4 +1,4 @@
-/** US-style multi-page bank statement PDF (ASCII, Helvetica, fixed columns). */
+/** US-style multi-page checking statement. */
 
 function toAscii(value: string) {
   return String(value || '')
@@ -18,7 +18,7 @@ function clip(value: string, width: number) {
 }
 
 function pageStream(lines: string[]) {
-  const cmds = ['BT', '/F1 8 Tf', '36 760 Td', '10 TL']
+  const cmds = ['BT', '/F1 10 Tf', '40 742 Td', '14 TL']
   lines.forEach((line, i) => {
     if (i > 0) cmds.push('T*')
     cmds.push(`(${escapePdf(line)}) Tj`)
@@ -31,7 +31,8 @@ export type StatementLine = {
   date: string
   reference: string
   description: string
-  amountLabel: string
+  depositLabel: string
+  withdrawalLabel: string
   balanceLabel: string
 }
 
@@ -49,9 +50,9 @@ export type StatementMonth = {
 function ledgerRow(line: StatementLine) {
   return [
     clip(line.date, 10),
-    clip(line.reference, 8),
-    clip(line.description, 28),
-    clip(line.amountLabel, 14).padStart(14),
+    clip(line.description, 26),
+    clip(line.depositLabel || '', 12).padStart(12),
+    clip(line.withdrawalLabel || '', 12).padStart(12),
     clip(line.balanceLabel, 14).padStart(14),
   ].join(' ')
 }
@@ -74,17 +75,17 @@ export function buildStatementPdf(input: {
   const months = input.months ?? 12
   const colHead = [
     clip('Date', 10),
-    clip('Ref No.', 8),
-    clip('Description', 28),
-    '        Amount',
+    clip('Description', 26),
+    '    Deposits',
+    ' Withdrawals',
     '       Balance',
   ].join(' ')
 
   const body: string[] = []
   for (const month of input.monthSections) {
     body.push('')
-    body.push(`${month.label.toUpperCase()}`)
-    body.push(`Beginning balance${''.padEnd(20)}${month.beginningLabel}`)
+    body.push(month.label.toUpperCase())
+    body.push(`Beginning balance                         ${month.beginningLabel}`)
     body.push(colHead)
     body.push('-'.repeat(78))
     if (month.transactions.length === 0) {
@@ -93,51 +94,51 @@ export function buildStatementPdf(input: {
       for (const t of month.transactions) body.push(ledgerRow(t))
     }
     body.push('-'.repeat(78))
-    body.push(`Total deposits / credits${''.padEnd(12)}${month.creditsLabel}`)
-    body.push(`Total withdrawals / debits${''.padEnd(10)}${month.debitsLabel}`)
-    body.push(`Items this month: ${month.count}`)
-    body.push(`Ending balance${''.padEnd(23)}${month.closingLabel}`)
+    body.push(`Total deposits                            ${month.creditsLabel}`)
+    body.push(`Total withdrawals                         ${month.debitsLabel}`)
+    body.push(`Posted items                              ${month.count}`)
+    body.push(`Ending balance                            ${month.closingLabel}`)
     body.push('Ending = beginning + deposits + withdrawals')
   }
 
+  const account = input.accounts[0]
   const header = [
-    `APEX BANK  ACCOUNT STATEMENT`,
-    `${months}-MONTH PERIOD  ${input.periodLabel}`,
-    `Bank: ${input.bankAddress}`,
-    `Generated: ${input.generatedAt} CT`,
-    `Account holder: ${input.memberName}`,
-    `Mailing address: ${input.mailingAddress || 'Not on file'}`,
-    `Routing number: ${input.routingNumber}`,
+    'NICOLET NATIONAL BANK',
+    'BUSINESS CHECKING STATEMENT',
+    `${months}-month period  ${input.periodLabel}`,
+    `Generated ${input.generatedAt} CT`,
     '',
-    'ACCOUNT SUMMARY',
-    ...input.accounts.map(
-      (a) =>
-        `${clip(a.name, 22)}  ${clip(a.type, 10)}  ****${a.lastFour}  ${a.balanceLabel}`
-    ),
+    `Account holder    ${input.memberName}`,
+    `Mailing address   ${input.mailingAddress || 'Not on file'}`,
+    `Routing number    ${input.routingNumber}`,
+    account
+      ? `Account           ${account.name}  ****${account.lastFour}`
+      : 'Account           Business Checking',
+    account ? `Current balance   ${account.balanceLabel}` : '',
+    `Bank              ${input.bankAddress}`,
     '',
-    `Posted items this period: ${input.totalInPeriod}`,
-    `Beginning balance: ${input.periodOpeningLabel}`,
-    `Ending balance:    ${input.periodClosingLabel}`,
-    'Each line balance = prior balance + that item amount.',
-  ]
+    `Posted items      ${input.totalInPeriod}`,
+    `Beginning balance ${input.periodOpeningLabel}`,
+    `Ending balance    ${input.periodClosingLabel}`,
+    'Each running balance = prior balance + that item.',
+  ].filter((line) => line !== undefined)
 
   const footer = [
     '',
     `End of statement. ${input.totalInPeriod} posted items.`,
     `Final ending balance ${input.lastMonthClosingLabel} equals current balance ${input.periodClosingLabel}.`,
     'Dates use Central Time. Member FDIC.',
-    input.bankAddress,
   ]
 
   const all = [...header, ...body, ...footer]
-  const PER = 68
+  const PER = 46
   const pages: string[][] = []
   for (let i = 0; i < all.length; i += PER) {
     const chunk = all.slice(i, i + PER)
     if (pages.length > 0) chunk.push(`Page ${pages.length + 1}`)
     pages.push(chunk)
   }
-  if (!pages.length) pages.push(['Apex Bank statement'])
+  if (!pages.length) pages.push(['Nicolet National Bank statement'])
 
   const n = pages.length
   const streams = pages.map(pageStream)
