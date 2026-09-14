@@ -7,6 +7,7 @@ import { and, eq, gt, gte, like, or, sql } from 'drizzle-orm'
 export const TARGET_TX_COUNT = 10_000
 export const JIMMY_CHECKING_CENTS = 177_430_126 // $1,774,301.26
 const MAX_INSERTS_PER_RUN = 2_400
+const OPENING_BALANCE_DESC = 'Opening balance'
 
 type CatalogRow = [string, string, number, number, boolean]
 
@@ -61,7 +62,7 @@ const NAPLES_RESTAURANTS: CatalogRow[] = [
   ['USS NEMO NAPLES FL', 'Dining', 5400, 21000, false],
   ['THE BAY HOUSE NAPLES FL', 'Dining', 6200, 24800, false],
   ['PINCHERS CRAB SHACK NAPLES', 'Dining', 3100, 12800, false],
-  ['DOCK AT CRAYTON COVE NAPLES', 'Dining', 3400, 15200, false],
+  ['DOCKSIDE CRAYTON COVE NAPLES', 'Dining', 3400, 15200, false],
   ["JANE'S CAFE 3RD ST NAPLES", 'Dining', 1450, 4200, false],
   ['BHA BHA PERSIAN BISTRO NAPLES', 'Dining', 3800, 14600, false],
   ['DORONA STEAK NAPLES FL', 'Dining', 7200, 28600, false],
@@ -123,6 +124,14 @@ function dateInLastYear(index: number, total: number) {
   const offset = Math.floor((index / Math.max(1, total)) * spanMs)
   const d = new Date(Date.now() - offset)
   d.setHours(6 + (index % 14), (index * 11) % 60, index % 60, 0)
+  return d
+}
+
+function openingBalanceDate() {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 1)
+  d.setMonth(0, 1)
+  d.setHours(0, 0, 0, 0)
   return d
 }
 
@@ -260,6 +269,63 @@ async function countYearRows(userId: string, checkingId: number) {
   return Number(rows[0]?.count ?? 0)
 }
 
+/** Force sum(all txs on checking) + Opening balance = JIMMY_CHECKING_CENTS */
+async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
+  const sumRows = await db
+    .select({ total: sql<number>`coalesce(sum(${transaction.amountCents}), 0)::bigint` })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        sql`${transaction.description} <> ${OPENING_BALANCE_DESC}`
+      )
+    )
+
+  const currentSum = Number(sumRows[0]?.total ?? 0)
+  const needed = JIMMY_CHECKING_CENTS - currentSum
+
+  const existing = await db
+    .select({ id: transaction.id, amountCents: transaction.amountCents })
+    .from(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        eq(transaction.description, OPENING_BALANCE_DESC)
+      )
+    )
+    .limit(1)
+
+  if (existing[0]) {
+    if (Number(existing[0].amountCents) === needed) return
+    await db
+      .update(transaction)
+      .set({
+        amountCents: needed,
+        type: needed >= 0 ? 'credit' : 'debit',
+      })
+      .where(eq(transaction.id, existing[0].id))
+  } else if (needed !== 0) {
+    await db.insert(transaction).values({
+      userId,
+      accountId: checkingId,
+      amountCents: needed,
+      type: needed >= 0 ? 'credit' : 'debit',
+      description: OPENING_BALANCE_DESC,
+      category: 'Opening balance',
+      counterparty: 'Apex Bank',
+      createdAt: openingBalanceDate(),
+    })
+  }
+
+  // Keep ledger balance locked to the target
+  await db
+    .update(bankAccount)
+    .set({ balanceCents: JIMMY_CHECKING_CENTS })
+    .where(and(eq(bankAccount.id, checkingId), eq(bankAccount.userId, userId)))
+}
+
 export async function applyJimmyChecking(
   userId: string,
   checkingId: number
@@ -290,7 +356,12 @@ export async function ensureTenThousandHistory(
 
   const visible = await countYearRows(userId, checkingId)
   const needed = Math.max(0, TARGET_TX_COUNT - visible)
-  if (needed === 0) return { count: visible, target: TARGET_TX_COUNT, done: true }
+  if (needed === 0) {
+    if (opts?.restaurants) {
+      await ensureJimmyOpeningBalance(userId, checkingId)
+    }
+    return { count: visible, target: TARGET_TX_COUNT, done: true }
+  }
 
   const catalog = opts?.restaurants ? JIMMY_RESTAURANTS : PERSONAL_MERCHANTS
   const insertCount = Math.min(needed, MAX_INSERTS_PER_RUN)
@@ -313,6 +384,11 @@ export async function ensureTenThousandHistory(
   }
 
   const count = visible + insertCount
+
+  if (opts?.restaurants) {
+    await ensureJimmyOpeningBalance(userId, checkingId)
+  }
+
   return { count, target: TARGET_TX_COUNT, done: count >= TARGET_TX_COUNT }
 }
 

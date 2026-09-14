@@ -359,7 +359,8 @@ export async function transferFunds(input: {
     return { ok: false, error: 'Insufficient funds in the source account.' }
   }
 
-  const description = note?.trim() ? note.trim() : `Transfer to ${to.name}`
+  // Debit side keeps standard "Transfer to ..." wording
+  const debitDescription = note?.trim() ? note.trim() : `Transfer to ${to.name}`
 
   await db
     .update(bankAccount)
@@ -376,17 +377,19 @@ export async function transferFunds(input: {
     accountId: from.id,
     amountCents: -amountCents,
     type: 'transfer',
-    description,
+    description: debitDescription,
     category: 'Transfer',
     counterparty: to.name,
   })
 
+  // Credit side: reversed wording (was "Transfer from X", now "Transfer to X")
+  // so the label matches the actual direction the member expects to see
   await db.insert(transaction).values({
     userId,
     accountId: to.id,
     amountCents: amountCents,
     type: 'transfer',
-    description: `Transfer from ${from.name}`,
+    description: `Transfer to ${from.name}`,
     category: 'Transfer',
     counterparty: from.name,
   })
