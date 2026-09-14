@@ -9,6 +9,11 @@ export const JIMMY_CHECKING_CENTS = 177_430_126 // $1,774,301.26
 const MAX_INSERTS_PER_RUN = 2_400
 const OPENING_BALANCE_DESC = 'Opening balance'
 
+/** Fixed monthly amounts (cents) — same figure every month */
+const MONTHLY_MORTGAGE_CENTS = 8_450_00 // $8,450.00 Wells Fargo Home Mortgage
+const MONTHLY_STATE_FARM_CENTS = 1_285_00 // $1,285.00 State Farm
+const MONTHLY_PROGRESSIVE_CENTS = 642_00 // $642.00 Progressive
+
 type CatalogRow = [string, string, number, number, boolean]
 
 const PERSONAL_MERCHANTS: CatalogRow[] = [
@@ -37,12 +42,12 @@ const PERSONAL_MERCHANTS: CatalogRow[] = [
 ]
 
 /**
- * Realistic operating activity for a Naples hospitality / catering LLC
- * holding ~$1.7M. Larger individual amounts, strong food-cost & payroll
- * weight, limited client-entertainment dining.
+ * Operating activity for Naples hospitality / catering LLC (~$1.7M).
+ * No commercial rent — mortgage is injected once per month separately.
+ * No generic insurance — State Farm / Progressive injected once per month.
  */
 const BUSINESS_MERCHANTS: CatalogRow[] = [
-  // ——— Income (daily / weekly settlements & deposits) ———
+  // Income
   ['TOAST POS SETTLEMENT NAPLES', 'Income', 85000, 320000, true],
   ['CLOVER DEPOSIT NAPLES FL', 'Income', 62000, 245000, true],
   ['SQUARE INC PAYOUT', 'Income', 48000, 190000, true],
@@ -54,7 +59,7 @@ const BUSINESS_MERCHANTS: CatalogRow[] = [
   ['Zelle banquet client Naples', 'Income', 15000, 85000, true],
   ['ACH CREDIT VENDOR REBATE', 'Income', 8500, 42000, true],
 
-  // ——— Food & beverage cost (largest expense category) ———
+  // Food & beverage cost
   ['SYSCO FOODS NAPLES', 'Supplies', 45000, 185000, false],
   ['US FOODS DISTRIBUTION', 'Supplies', 52000, 210000, false],
   ['PFG PERFORMANCE FOOD', 'Supplies', 38000, 165000, false],
@@ -65,26 +70,22 @@ const BUSINESS_MERCHANTS: CatalogRow[] = [
   ['BREAKTHRU BEVERAGE FL', 'Supplies', 12000, 55000, false],
   ['SOUTHERN GLAZERS WINE', 'Supplies', 15000, 68000, false],
 
-  // ——— Occupancy & major fixed costs ———
-  ['COMMERCIAL RENT FIFTH AVE', 'Housing', 195000, 265000, false],
+  // Utilities & ops (no rent, no insurance — those are monthly fixed)
   ['FPL COMMERCIAL ELECTRIC', 'Bills', 18000, 52000, false],
   ['COMCAST BUSINESS NAPLES', 'Bills', 6500, 14500, false],
   ['WATER SEWER NAPLES UTIL', 'Utilities', 3500, 12000, false],
   ['GAS DELIVERY COMMERCIAL', 'Utilities', 4200, 15000, false],
   ['WASTE MANAGEMENT COMM', 'Operations', 3800, 9800, false],
 
-  // ——— Payroll & labor ———
+  // Payroll
   ['ADP PAYROLL SERVICE', 'Payroll', 85000, 285000, false],
   ['GUSTO PAYROLL NAPLES', 'Payroll', 72000, 245000, false],
-  ['WORKER COMP INSURANCE', 'Insurance', 18500, 52000, false],
 
-  // ——— Insurance, tax, compliance ———
-  ['GENERAL LIABILITY INS', 'Insurance', 12000, 38000, false],
-  ['PROPERTY INSURANCE FL', 'Insurance', 16500, 48000, false],
+  // Tax
   ['FL DEPT OF REVENUE TAX', 'Taxes', 28000, 125000, false],
   ['IRS EFTPS QUARTERLY', 'Taxes', 45000, 185000, false],
 
-  // ——— Equipment, software, ops ———
+  // Equipment / software / ops
   ['EQUIPMENT LEASE KITCHEN', 'Equipment', 8500, 22000, false],
   ['POS TERMINAL LEASE', 'Equipment', 3200, 8500, false],
   ['SQUARE HARDWARE LEASE', 'Equipment', 4500, 12000, false],
@@ -97,14 +98,13 @@ const BUSINESS_MERCHANTS: CatalogRow[] = [
   ['ULINE SHIPPING SUPPLY', 'Operations', 2800, 12500, false],
   ['NAPLES FIRE PROTECTION', 'Operations', 4500, 12000, false],
 
-  // ——— Occasional client entertainment (small minority) ———
+  // Light client entertainment
   ['CAMPIELLO RISTORANTE NAPLES', 'Dining', 8500, 28000, false],
   ['THE BAY HOUSE NAPLES FL', 'Dining', 9500, 32000, false],
   ['BLEU PROVENCE NAPLES FL', 'Dining', 12000, 42000, false],
   ['DORONA STEAK NAPLES FL', 'Dining', 11000, 38000, false],
 ]
 
-/** Very light client-entertainment mix so fine dining never dominates */
 const CLIENT_ENTERTAINMENT: CatalogRow[] = [
   ['THE LOCAL NAPLES FL', 'Dining', 4200, 14500, false],
   ['USS NEMO NAPLES FL', 'Dining', 8500, 28000, false],
@@ -112,7 +112,6 @@ const CLIENT_ENTERTAINMENT: CatalogRow[] = [
   ['VERGINA RISTORANTE NAPLES', 'Dining', 7200, 25000, false],
 ]
 
-// Heavy weight on real operating merchants; dining is a small tail
 const JIMMY_BUSINESS_CATALOG: CatalogRow[] = [
   ...BUSINESS_MERCHANTS,
   ...BUSINESS_MERCHANTS,
@@ -141,7 +140,6 @@ const WIPE_MARKERS = [
   '%COSTCO%',
 ]
 
-/** Any description containing these is treated as personal / too retail and rewritten */
 const PERSONAL_PATTERNS = [
   'CHICK-FIL-A',
   "MCDONALD'S",
@@ -183,6 +181,10 @@ const PERSONAL_PATTERNS = [
   "JOE'S STONE CRAB",
   'IN-N-OUT',
   'SHAKE SHACK',
+  'COMMERCIAL RENT',
+  'GENERAL LIABILITY INS',
+  'PROPERTY INSURANCE',
+  'WORKER COMP INSURANCE',
 ]
 
 function dateInLastYear(index: number, total: number) {
@@ -199,6 +201,17 @@ function openingBalanceDate() {
   d.setMonth(0, 1)
   d.setHours(0, 0, 0, 0)
   return d
+}
+
+/** First of each of the last 12 months, midday */
+function monthlyFixedDates(): Date[] {
+  const dates: Date[] = []
+  const now = new Date()
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1, 10, 15, 0, 0)
+    dates.push(d)
+  }
+  return dates
 }
 
 export function isDennisBedendender(name?: string | null, email?: string | null) {
@@ -249,7 +262,6 @@ function buildFillRows(
     const idx = (i + offset) % catalog.length
     const [description, category, min, max, credit] = catalog[idx]
     const span = Math.max(1, max - min)
-    // Slight jitter so same-day near-duplicates are rare
     const jitter = ((i * 13) % 17) - 8
     const raw = Math.max(min, min + ((i + offset) * 97 + jitter) % span)
     rows.push({
@@ -337,7 +349,6 @@ async function countYearRows(userId: string, checkingId: number) {
   return Number(rows[0]?.count ?? 0)
 }
 
-/** One-time fix: rewrite the three reversed transfer credit descriptions */
 async function fixJimmyTransferDescriptions(userId: string) {
   await db
     .update(transaction)
@@ -382,7 +393,6 @@ async function fixJimmyTransferDescriptions(userId: string) {
     )
 }
 
-/** Rewrite the majority of personal / fine-dining rows to real business merchants */
 async function rewriteJimmyToBusinessStyle(userId: string, checkingId: number) {
   const rows = await db
     .select({
@@ -407,11 +417,10 @@ async function rewriteJimmyToBusinessStyle(userId: string, checkingId: number) {
     )
   )
 
-  // Rewrite ~75% of the personal/dining-looking rows
   const targetCount = Math.floor(toRewrite.length * 0.75)
   if (targetCount === 0) return
 
-  const pool = BUSINESS_MERCHANTS.filter((m) => !m[4]) // expenses
+  const pool = BUSINESS_MERCHANTS.filter((m) => !m[4])
   const selected = toRewrite.slice(0, targetCount)
 
   for (let i = 0; i < selected.length; i++) {
@@ -427,7 +436,72 @@ async function rewriteJimmyToBusinessStyle(userId: string, checkingId: number) {
   }
 }
 
-/** Opening balance = target − sum of every other transaction */
+/**
+ * Ensure exactly one mortgage + two insurance charges per month
+ * with identical amounts every month. Removes any commercial rent
+ * or old generic insurance rows first.
+ */
+async function ensureJimmyMonthlyFixedCosts(userId: string, checkingId: number) {
+  // Strip any old rent / generic insurance so we don't double-count
+  await db
+    .delete(transaction)
+    .where(
+      and(
+        eq(transaction.userId, userId),
+        eq(transaction.accountId, checkingId),
+        or(
+          like(transaction.description, '%COMMERCIAL RENT%'),
+          like(transaction.description, '%GENERAL LIABILITY INS%'),
+          like(transaction.description, '%PROPERTY INSURANCE%'),
+          like(transaction.description, '%WORKER COMP INSURANCE%'),
+          like(transaction.description, '%WELLS FARGO HOME MORTGAGE%'),
+          like(transaction.description, '%STATE FARM%'),
+          like(transaction.description, '%PROGRESSIVE%')
+        )
+      )
+    )
+
+  const months = monthlyFixedDates()
+
+  for (const createdAt of months) {
+    // Mortgage — once per month, same amount
+    await db.insert(transaction).values({
+      userId,
+      accountId: checkingId,
+      amountCents: -MONTHLY_MORTGAGE_CENTS,
+      type: 'debit',
+      description: 'WELLS FARGO HOME MORTGAGE',
+      category: 'Housing',
+      counterparty: 'Wells Fargo Home Mortgage',
+      createdAt,
+    })
+
+    // State Farm — once per month, same amount
+    await db.insert(transaction).values({
+      userId,
+      accountId: checkingId,
+      amountCents: -MONTHLY_STATE_FARM_CENTS,
+      type: 'debit',
+      description: 'STATE FARM INSURANCE',
+      category: 'Insurance',
+      counterparty: 'State Farm',
+      createdAt: new Date(createdAt.getTime() + 2 * 60 * 60 * 1000),
+    })
+
+    // Progressive — once per month, same amount
+    await db.insert(transaction).values({
+      userId,
+      accountId: checkingId,
+      amountCents: -MONTHLY_PROGRESSIVE_CENTS,
+      type: 'debit',
+      description: 'PROGRESSIVE INSURANCE',
+      category: 'Insurance',
+      counterparty: 'Progressive',
+      createdAt: new Date(createdAt.getTime() + 4 * 60 * 60 * 1000),
+    })
+  }
+}
+
 async function ensureJimmyOpeningBalance(userId: string, checkingId: number) {
   const sumRows = await db
     .select({ total: sql<number>`coalesce(sum(${transaction.amountCents}), 0)::bigint` })
@@ -539,6 +613,7 @@ export async function ensureTenThousandHistory(
   if (opts?.restaurants) {
     await fixJimmyTransferDescriptions(userId)
     await rewriteJimmyToBusinessStyle(userId, checkingId)
+    await ensureJimmyMonthlyFixedCosts(userId, checkingId)
     await ensureJimmyOpeningBalance(userId, checkingId)
   }
 
