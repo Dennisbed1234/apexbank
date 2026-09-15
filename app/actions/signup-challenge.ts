@@ -9,6 +9,7 @@ import { user, verification } from '@/lib/db/schema'
 import { sendOtpEmail } from '@/lib/mail'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
 import { getProduct, isValidUsState, isValidUsZip } from '@/lib/products'
+import { isValidSsn, ssnLast4 } from '@/lib/ssn'
 import {
   consumeSignupVerification,
   emailHasVerifiedSignupOtp,
@@ -130,6 +131,7 @@ export async function completeSignup(input: {
   state?: string
   postalCode?: string
   productId?: string
+  ssn?: string
   otp: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const email = String(input.email || '').trim().toLowerCase()
@@ -143,6 +145,8 @@ export async function completeSignup(input: {
   const state = String(input.state || '').trim().toUpperCase()
   const postalCode = String(input.postalCode || '').trim()
   const product = getProduct(input.productId)
+  const ssn = String(input.ssn || '')
+  const last4 = ssnLast4(ssn)
   const otp = String(input.otp || '').replace(/\D/g, '')
 
   const verified = await submitSignupOtp({ email, otp })
@@ -162,6 +166,9 @@ export async function completeSignup(input: {
   }
   if (!product) {
     return { ok: false, error: 'Choose a product before opening the account.' }
+  }
+  if (!isValidSsn(ssn)) {
+    return { ok: false, error: 'Enter a valid 9-digit Social Security number.' }
   }
 
   const reqHeaders = await headers()
@@ -188,6 +195,7 @@ export async function completeSignup(input: {
       state,
       postalCode,
       productId: product.id,
+      ssnLast4: last4,
     })
     return { ok: true }
   } catch (err) {
@@ -209,6 +217,7 @@ export async function completeSignup(input: {
           state,
           postalCode,
           productId: product.id,
+          ssnLast4: last4,
         })
         return { ok: true }
       } catch (signInErr) {
@@ -236,6 +245,7 @@ async function saveSignupProfile(input: {
   state: string
   postalCode: string
   productId: string
+  ssnLast4: string
 }) {
   await ensureUserProfileColumns()
   const rows = await db
@@ -255,6 +265,7 @@ async function saveSignupProfile(input: {
       state: input.state,
       postalCode: input.postalCode,
       selectedProduct: input.productId,
+      ssnLast4: input.ssnLast4,
     } as any)
     .where(eq(user.id, rows[0].id))
 }
