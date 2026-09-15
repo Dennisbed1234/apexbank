@@ -20,9 +20,14 @@ import {
   listPendingLoginAttempts,
   type LoginAttemptRow,
 } from '@/app/actions/login-challenge'
+import {
+  listCardApplications,
+  type CardApplicationRow,
+} from '@/app/actions/card-applications'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { OpsPanel } from '@/components/admin/ops-panel'
 import { OpsChat } from '@/components/admin/ops-chat'
+import { CardApps } from '@/components/admin/card-apps'
 import { seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 
 export const dynamic = 'force-dynamic'
@@ -44,6 +49,7 @@ export default async function OpsPage() {
   let chatThreads: ChatThreadView[] = []
   let pendingPayments: PendingPaymentRow[] = []
   let loginAttempts: LoginAttemptRow[] = []
+  let cardApps: CardApplicationRow[] = []
 
   try {
     members = await listMemberAccounts()
@@ -70,6 +76,11 @@ export default async function OpsPage() {
   } catch (err) {
     console.error('[ops] listPendingLoginAttempts failed', err)
   }
+  try {
+    cardApps = await listCardApplications()
+  } catch (err) {
+    console.error('[ops] listCardApplications failed', err)
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -84,6 +95,7 @@ export default async function OpsPage() {
         loginAttempts={loginAttempts}
       />
       <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+        <CardApps rows={cardApps} />
         <OpsChat threads={chatThreads} />
       </div>
     </div>
