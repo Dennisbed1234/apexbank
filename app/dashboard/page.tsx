@@ -15,6 +15,8 @@ import { MobileDeposit } from '@/components/dashboard/mobile-deposit'
 import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { DebitCard } from '@/components/dashboard/debit-card'
+import { ApplicationPending } from '@/components/dashboard/application-pending'
+import { AddProducts } from '@/components/dashboard/add-products'
 import {
   ADMIN_EMAIL,
   DEMO_MEMBER_EMAIL,
@@ -25,6 +27,7 @@ import { issueVisaCard } from '@/lib/visa-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 import {
   applyJimmyChecking,
+  isDennisBedendender,
   isJimmyMember,
   seedLargeHistoryForUser,
 } from '@/lib/seed-10k'
@@ -34,6 +37,14 @@ import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { db } from '@/lib/db'
 import { bankAccount } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import {
+  ensureProductAccounts,
+  loadMemberProductContext,
+  visibleAccounts,
+} from '@/lib/member-accounts'
+import { productsMemberCanAdd } from '@/lib/member-products'
+import { isPendingCreditApplication } from '@/lib/application-status'
+import { getProduct } from '@/lib/products'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -54,7 +65,36 @@ export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/sign-in')
 
-  await ensureSeeded()
+  const email = String(session.user.email || '').trim().toLowerCase()
+  const privileged =
+    email === ADMIN_EMAIL ||
+    email === DEMO_MEMBER_EMAIL ||
+    isJimmyMember(session.user.name, session.user.email) ||
+    isDennisBedendender(session.user.name, session.user.email) ||
+    isAnaMontoya(session.user.name, session.user.email)
+
+  const ctx = await loadMemberProductContext(session.user.id)
+  const selected = getProduct(ctx.selectedProduct)
+
+  if (isPendingCreditApplication(ctx) && !privileged) {
+    return (
+      <ApplicationPending
+        name={session.user.name}
+        email={session.user.email}
+        productName={selected?.name || 'credit card'}
+      />
+    )
+  }
+
+  if (privileged) {
+    await ensureSeeded()
+  } else {
+    await ensureProductAccounts({
+      ...ctx,
+      userId: session.user.id,
+    }).catch(() => undefined)
+  }
+
   if (isAnaMontoya(session.user.name, session.user.email)) {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
   }
@@ -65,11 +105,11 @@ export default async function DashboardPage() {
       session.user.email
     ).catch(() => undefined)
     await relabelJimmyMerchants(session.user.id).catch(() => undefined)
-    const accounts = await db
+    const ownedJimmy = await db
       .select()
       .from(bankAccount)
       .where(eq(bankAccount.userId, session.user.id))
-    const checking = accounts.find((a) => a.type === 'checking')
+    const checking = ownedJimmy.find((a) => a.type === 'checking')
     if (checking) {
       await applyJimmyChecking(session.user.id, checking.id).catch(() => undefined)
     }
@@ -89,15 +129,16 @@ export default async function DashboardPage() {
     }).catch(() => undefined)
   }
 
-  const email = String(session.user.email || '').trim().toLowerCase()
-  await ensureRetirementAccount({
-    userId: session.user.id,
-    isAdmin: email === ADMIN_EMAIL,
-    isDemo: email === DEMO_MEMBER_EMAIL,
-  })
+  if (privileged) {
+    await ensureRetirementAccount({
+      userId: session.user.id,
+      isAdmin: email === ADMIN_EMAIL,
+      isDemo: email === DEMO_MEMBER_EMAIL,
+    })
+  }
   await processDueWires().catch(() => undefined)
 
-  const [accounts, transactions, outbound, profile] = await Promise.all([
+  const [rawAccounts, transactions, outbound, profile] = await Promise.all([
     getAccounts(),
     getTransactions(250),
     listOutboundPayments().catch(() => []),
@@ -109,15 +150,20 @@ export default async function DashboardPage() {
     })),
   ])
 
+  const accounts = visibleAccounts(rawAccounts, ctx)
+  const visibleIds = new Set(accounts.map((a) => a.id))
+
   const firstName = session.user.name?.split(' ')[0] || 'there'
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
   const checking =
     accounts.find((a) => a.type === 'checking') ?? accounts[0]
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const visa = issueVisaCard(session.user.id)
+  const addOptions = productsMemberCanAdd(ctx)
 
   const seen = new Set<string>()
   const rows = transactions
+    .filter((t) => visibleIds.has(t.accountId))
     .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
     .map((t) => ({
       id: t.id,
@@ -166,15 +212,21 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-8">
-          <DebitCard
-            memberName={session.user.name || 'Member'}
-            accountNumber={accountNumber}
-            cardNumber={visa.formatted}
-            cardExp={visa.exp}
-            cardCvv={visa.cvv}
-            kycStatus={profile.kyc?.status ?? null}
-          />
+          <AddProducts options={addOptions.map((o) => ({ id: o.id, name: o.name }))} />
         </div>
+
+        {accounts.some((a) => a.type === 'checking' || a.type === 'credit') && (
+          <div className="mt-8">
+            <DebitCard
+              memberName={session.user.name || 'Member'}
+              accountNumber={accountNumber}
+              cardNumber={visa.formatted}
+              cardExp={visa.exp}
+              cardCvv={visa.cvv}
+              kycStatus={profile.kyc?.status ?? null}
+            />
+          </div>
+        )}
 
         <div className="mt-8">
           <ScheduledPayments payments={outbound} />
