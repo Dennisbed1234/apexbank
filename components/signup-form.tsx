@@ -14,9 +14,10 @@ import {
   isValidUsZip,
   type BankProduct,
 } from '@/lib/products'
+import { formatSsnInput, isValidSsn } from '@/lib/ssn'
 
 function isValidUsPhone(value: string) {
-  const digits = value.replace(/\\D/g, '')
+  const digits = value.replace(/\D/g, '')
   return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
 }
 
@@ -45,6 +46,7 @@ export function SignupForm({ product }: { product: BankProduct }) {
   const [name, setName] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [phone, setPhone] = useState('')
+  const [ssn, setSsn] = useState('')
   const [addressLine1, setAddressLine1] = useState('')
   const [addressLine2, setAddressLine2] = useState('')
   const [city, setCity] = useState('')
@@ -93,6 +95,11 @@ export function SignupForm({ product }: { product: BankProduct }) {
           setError('You must be at least 18 years old to open an account.')
           return
         }
+        if (!isValidSsn(ssn)) {
+          setLoading(false)
+          setError('Enter a valid 9-digit Social Security number.')
+          return
+        }
         if (!addressLine1.trim() || !city.trim()) {
           setLoading(false)
           setError('Enter your street address and city.')
@@ -135,6 +142,7 @@ export function SignupForm({ product }: { product: BankProduct }) {
         state: state.trim().toUpperCase(),
         postalCode: postalCode.trim(),
         productId: selected.id,
+        ssn,
         otp,
       })
       if (!created.ok) {
@@ -171,7 +179,7 @@ export function SignupForm({ product }: { product: BankProduct }) {
             <p className="mt-1 text-sm text-muted-foreground">
               {step === 'otp'
                 ? `We emailed a 6-digit code to ${normalizedEmail}.`
-                : 'U.S. mailing address and date of birth are required.'}
+                : 'U.S. mailing address, date of birth, and SSN are required.'}
             </p>
             {step === 'details' && (
               <Link href="/sign-up" className="mt-2 inline-block text-sm text-muted-foreground underline-offset-4 hover:underline">
@@ -189,6 +197,11 @@ export function SignupForm({ product }: { product: BankProduct }) {
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="dob">Date of birth</Label>
                   <Input id="dob" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} required max={adultDobCutoff()} min="1900-01-01" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="ssn">Social Security number</Label>
+                  <Input id="ssn" value={ssn} onChange={(e) => setSsn(formatSsnInput(e.target.value))} required inputMode="numeric" autoComplete="off" placeholder="123-45-6789" />
+                  <p className="text-xs text-muted-foreground">Required to open a U.S. bank account. Only the last 4 digits stay on your profile.</p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="phone">U.S. phone number</Label>
@@ -238,7 +251,7 @@ export function SignupForm({ product }: { product: BankProduct }) {
             {step === 'otp' && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="otp">Verification code</Label>
-                <Input id="otp" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\\D/g, '').slice(0, 6))} required autoComplete="one-time-code" placeholder="000000" className="text-center text-2xl tracking-[0.4em]" />
+                <Input id="otp" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} required autoComplete="one-time-code" placeholder="000000" className="text-center text-2xl tracking-[0.4em]" />
               </div>
             )}
             {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
