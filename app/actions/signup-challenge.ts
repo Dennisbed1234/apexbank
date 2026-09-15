@@ -10,6 +10,7 @@ import { sendOtpEmail } from '@/lib/mail'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
 import { getProduct, isValidUsState, isValidUsZip } from '@/lib/products'
 import { isValidSsn, ssnLast4 } from '@/lib/ssn'
+import { statusForNewProduct } from '@/lib/application-status'
 import {
   consumeSignupVerification,
   emailHasVerifiedSignupOtp,
@@ -266,6 +267,7 @@ async function saveSignupProfile(input: {
       postalCode: input.postalCode,
       selectedProduct: input.productId,
       ssnLast4: input.ssnLast4,
+      applicationStatus: statusForNewProduct(input.productId),
     } as any)
     .where(eq(user.id, rows[0].id))
 }
