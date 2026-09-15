@@ -6,14 +6,20 @@ import { updateProfile, type MemberAddress } from '@/app/actions/settings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { US_STATES } from '@/lib/products'
 
 export function ProfileForm({
+  initialName,
   initialPhone,
   initialAddress,
+  ssnLast4,
 }: {
+  initialName: string
   initialPhone: string
   initialAddress: MemberAddress
+  ssnLast4?: string
 }) {
+  const [name, setName] = useState(initialName)
   const [phone, setPhone] = useState(initialPhone)
   const [addressLine1, setAddressLine1] = useState(initialAddress.addressLine1)
   const [addressLine2, setAddressLine2] = useState(initialAddress.addressLine2)
@@ -28,6 +34,7 @@ export function ProfileForm({
     setError(null)
     startTransition(async () => {
       const result = await updateProfile({
+        name,
         phone,
         addressLine1,
         addressLine2,
@@ -48,9 +55,13 @@ export function ProfileForm({
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <h2 className="text-base font-semibold text-foreground">Contact</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Phone is kept on your profile. Address prints on every statement PDF.
+          Name and phone stay on your profile. Address prints on every statement.
         </p>
         <div className="mt-4 flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="name">Legal name</Label>
+            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="phone">Phone number</Label>
             <Input
@@ -61,6 +72,9 @@ export function ProfileForm({
               placeholder="(555) 123-4567"
             />
           </div>
+          {ssnLast4 ? (
+            <p className="text-sm text-muted-foreground">SSN on file ending in {ssnLast4}</p>
+          ) : null}
         </div>
       </section>
 
@@ -102,14 +116,20 @@ export function ProfileForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="state">State</Label>
-              <Input
+              <select
                 id="state"
                 value={state}
-                onChange={(e) => setState(e.target.value.toUpperCase().slice(0, 2))}
-                placeholder="FL"
-                maxLength={2}
+                onChange={(e) => setState(e.target.value)}
                 required
-              />
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Select</option>
+                {US_STATES.map(([abbr, label]) => (
+                  <option key={abbr} value={abbr}>
+                    {abbr} - {label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="zip">ZIP</Label>
