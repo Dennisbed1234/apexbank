@@ -7,11 +7,12 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { user, verification } from '@/lib/db/schema'
 import { sendOtpEmail } from '@/lib/mail'
+import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
+import { getProduct, isValidUsState, isValidUsZip } from '@/lib/products'
 import {
   consumeSignupVerification,
   emailHasVerifiedSignupOtp,
   signupOtpKey,
-  signupVerifiedKey,
 } from '@/lib/signup-otp'
 
 function hashOtp(otp: string) {
@@ -68,7 +69,7 @@ export async function startSignupChallenge(input: {
       return false
     })
     if (!sent) {
-      console.info('[apex-bank] signup OTP for', email, otp)
+      console.info('[nicolet] signup OTP for', email, otp)
     }
 
     return { ok: true, attemptId: id }
@@ -123,6 +124,12 @@ export async function completeSignup(input: {
   name: string
   phone: string
   dateOfBirth: string
+  addressLine1?: string
+  addressLine2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  productId?: string
   otp: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const email = String(input.email || '').trim().toLowerCase()
@@ -130,6 +137,12 @@ export async function completeSignup(input: {
   const name = String(input.name || '').trim()
   const phone = String(input.phone || '').trim()
   const dateOfBirth = String(input.dateOfBirth || '')
+  const addressLine1 = String(input.addressLine1 || '').trim()
+  const addressLine2 = String(input.addressLine2 || '').trim()
+  const city = String(input.city || '').trim()
+  const state = String(input.state || '').trim().toUpperCase()
+  const postalCode = String(input.postalCode || '').trim()
+  const product = getProduct(input.productId)
   const otp = String(input.otp || '').replace(/\D/g, '')
 
   const verified = await submitSignupOtp({ email, otp })
@@ -137,6 +150,18 @@ export async function completeSignup(input: {
 
   if (password.length < 8) {
     return { ok: false, error: 'Password must be at least 8 characters.' }
+  }
+  if (!addressLine1 || !city) {
+    return { ok: false, error: 'Enter your U.S. mailing address.' }
+  }
+  if (!isValidUsState(state)) {
+    return { ok: false, error: 'Select a valid U.S. state.' }
+  }
+  if (!isValidUsZip(postalCode)) {
+    return { ok: false, error: 'Enter a valid ZIP code.' }
+  }
+  if (!product) {
+    return { ok: false, error: 'Choose a product before opening the account.' }
   }
 
   const reqHeaders = await headers()
@@ -153,6 +178,17 @@ export async function completeSignup(input: {
       headers: reqHeaders,
     })
     await consumeSignupVerification(email).catch(() => undefined)
+    await saveSignupProfile({
+      email,
+      phone,
+      dateOfBirth,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      postalCode,
+      productId: product.id,
+    })
     return { ok: true }
   } catch (err) {
     console.error('[signup] signUpEmail', err)
@@ -162,6 +198,17 @@ export async function completeSignup(input: {
         await auth.api.signInEmail({
           body: { email, password },
           headers: reqHeaders,
+        })
+        await saveSignupProfile({
+          email,
+          phone,
+          dateOfBirth,
+          addressLine1,
+          addressLine2,
+          city,
+          state,
+          postalCode,
+          productId: product.id,
         })
         return { ok: true }
       } catch (signInErr) {
@@ -177,6 +224,39 @@ export async function completeSignup(input: {
       error: message || 'Could not create the account. Try again.',
     }
   }
+}
+
+async function saveSignupProfile(input: {
+  email: string
+  phone: string
+  dateOfBirth: string
+  addressLine1: string
+  addressLine2: string
+  city: string
+  state: string
+  postalCode: string
+  productId: string
+}) {
+  await ensureUserProfileColumns()
+  const rows = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, input.email))
+    .limit(1)
+  if (!rows[0]) return
+  await db
+    .update(user)
+    .set({
+      phone: input.phone,
+      dateOfBirth: input.dateOfBirth,
+      addressLine1: input.addressLine1,
+      addressLine2: input.addressLine2 || null,
+      city: input.city,
+      state: input.state,
+      postalCode: input.postalCode,
+      selectedProduct: input.productId,
+    } as any)
+    .where(eq(user.id, rows[0].id))
 }
 
 export async function resendSignupOtp(input: {
