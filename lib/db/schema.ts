@@ -23,6 +23,8 @@ export const user = pgTable('user', {
   postalCode: text('postalCode'),
   selectedProduct: text('selectedProduct'),
   extraProducts: text('extraProducts'),
+  applicationStatus: text('applicationStatus'),
+  ssnLast4: text('ssnLast4'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
