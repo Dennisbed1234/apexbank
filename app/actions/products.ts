@@ -1,12 +1,16 @@
 'use server'
 
 import { headers } from 'next/headers'
+import { eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
+import { db } from '@/lib/db'
+import { user } from '@/lib/db/schema'
 import { getProduct } from '@/lib/products'
 import {
   loadMemberProductContext,
   openAdditionalProduct,
 } from '@/lib/member-accounts'
+import { statusForNewProduct } from '@/lib/application-status'
 
 export async function applyForProduct(
   productId: string
@@ -17,6 +21,16 @@ export async function applyForProduct(
   if (!product) return { ok: false, error: 'Unknown product.' }
   try {
     const ctx = await loadMemberProductContext(session.user.id)
+    if (product.category === 'credit-card') {
+      await db
+        .update(user)
+        .set({
+          selectedProduct: ctx.selectedProduct || product.id,
+          applicationStatus: 'pending',
+        } as any)
+        .where(eq(user.id, session.user.id))
+      return { ok: true }
+    }
     await openAdditionalProduct({
       userId: session.user.id,
       productId: product.id,
@@ -28,3 +42,5 @@ export async function applyForProduct(
     return { ok: false, error: 'Could not add that product.' }
   }
 }
+
+export { statusForNewProduct }
