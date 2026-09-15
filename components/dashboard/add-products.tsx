@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { applyForProduct } from '@/app/actions/banking'
+import { applyForProduct } from '@/app/actions/products'
 
 export function AddProducts({
   options,
