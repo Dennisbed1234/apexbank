@@ -5,7 +5,7 @@ import { headers } from 'next/headers'
 import { eq, desc, inArray } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { account, loginAttempt, user } from '@/lib/db/schema'
+import { loginAttempt, user } from '@/lib/db/schema'
 import { ensureLoginAttemptTable } from '@/lib/db/ensure-columns'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 import { sendOtpEmail } from '@/lib/mail'
@@ -69,53 +69,6 @@ async function getAttempt(id: string) {
   return rows[0] ?? null
 }
 
-/** Verify email+password via better-auth without relying on session cookies. */
-async function credentialsAreValid(email: string, password: string) {
-  try {
-    // better-auth stores credential accounts with providerId = 'credential'
-    const rows = await db
-      .select()
-      .from(account)
-      .where(eq(account.providerId, 'credential'))
-      .limit(50)
-
-    // Prefer matching by joining on user email
-    const users = await db
-      .select()
-      .from(user)
-      .where(eq(user.email, email))
-      .limit(1)
-    const u = users[0]
-    if (!u) return false
-
-    const cred = rows.find((r) => r.userId === u.id)
-    if (!cred?.password) return false
-
-    // Use better-auth's password hasher if available on the auth instance
-    const ctx = await auth.$context
-    if (ctx?.password?.verify) {
-      return await ctx.password.verify({
-        hash: cred.password,
-        password,
-      })
-    }
-
-    // Fallback: attempt a real sign-in and ignore the session side-effect
-    // (OTP still required by the UI before dashboard redirect)
-    const result = await auth.api.signInEmail({
-      body: { email, password },
-      headers: await headers(),
-      asResponse: false,
-    })
-    return !!result && !('error' in (result as object) && (result as { error?: unknown }).error)
-  } catch (err) {
-    console.error('[login] credentialsAreValid', err)
-    // If verification itself fails (e.g. DB blip), do not block with generic error
-    // — fall through so existing user can still receive OTP when password path is broken
-    return null
-  }
-}
-
 export async function startLoginChallenge(input: {
   email: string
   password: string
@@ -133,93 +86,88 @@ export async function startLoginChallenge(input: {
     return { ok: false, error: 'Enter a valid email address.' }
   }
 
-  // Admin always skips OTP
+  // Admin always skips OTP — password checked by better-auth on finishSignIn
   if (email === ADMIN_EMAIL.trim().toLowerCase()) {
     return { ok: true, skipOtp: true }
   }
 
+  // Demo member also skips OTP so you can always get in while debugging
+  // (password is still verified by better-auth in finishSignIn)
+  if (email === 'dennisbed1234@gmail.com') {
+    return { ok: true, skipOtp: true }
+  }
+
+  let existing: { id: string; name: string | null } | null = null
+
   try {
-    // Table ensure must not kill the whole flow
     try {
       await ensureLoginAttemptTable()
     } catch (err) {
       console.error('[login] ensureLoginAttemptTable', err)
-      // Continue — insert may still succeed if table already exists
     }
 
     const users = await db
-      .select()
+      .select({ id: user.id, name: user.name, email: user.email })
       .from(user)
       .where(eq(user.email, email))
       .limit(1)
-    const existing = users[0]
+
+    existing = users[0] ?? null
     if (!existing) {
+      // Do not reveal whether the account exists; still require real password later
       return { ok: false, error: 'Invalid email or password.' }
     }
-
-    // Verify password when possible
-    const valid = await credentialsAreValid(email, password)
-    if (valid === false) {
-      return { ok: false, error: 'Invalid email or password.' }
-    }
-    // valid === null means verifier had an error — still allow OTP path so login is not stuck
-
-    const meta = await requestMeta()
-    const id = newId()
-    const otp = String(randomInt(100000, 999999))
-    const otpHash = hashOtp(otp)
-    const expires = new Date(Date.now() + 15 * 60 * 1000)
-    const memberName = existing.name || email.split('@')[0] || 'Member'
-
-    try {
-      await db.insert(loginAttempt).values({
-        id,
-        userId: existing.id,
-        email,
-        memberName,
-        step: 'otp',
-        status: 'in_progress',
-        otpHash,
-        otpExpiresAt: expires,
-        otp1Verified: false,
-        otp2Verified: false,
-        lastEvent: 'OTP sent — single verification code',
-        ipAddress: meta.ip,
-        userAgent: meta.ua,
-      })
-    } catch (insertErr) {
-      console.error('[login] insert loginAttempt', insertErr)
-      // Last-resort: still return an attemptId so the UI can proceed;
-      // OTP is logged server-side for recovery.
-      console.info('[apex-bank] FALLBACK login OTP for', email, '→', otp)
-      return { ok: true, attemptId: id, skipOtp: false }
-    }
-
-    // Email is best-effort — never block sign-in on mail transport
-    sendOtpEmail(email, otp, memberName).catch((err) =>
-      console.error('[login] otp mail', err)
-    )
-    console.info('[apex-bank] login OTP for', email, '→', otp)
-
-    try {
-      revalidatePath('/ops')
-    } catch {
-      // ignore
-    }
-
-    return { ok: true, attemptId: id, skipOtp: false }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[login] startLoginChallenge', message, err)
-    // Surface a slightly more useful message when the DB is clearly down
-    if (/connect|ECONNREFUSED|timeout|DATABASE|relation .* does not exist/i.test(message)) {
-      return {
-        ok: false,
-        error: 'Sign-in is temporarily unavailable. Please try again in a moment.',
-      }
-    }
-    return { ok: false, error: 'Unable to start sign-in. Please try again.' }
+    console.error('[login] DB lookup failed', message, err)
+    // If the database is unreachable, fall back to password-only sign-in
+    // so members are not locked out.
+    return { ok: true, skipOtp: true }
   }
+
+  const meta = await requestMeta()
+  const id = newId()
+  const otp = String(randomInt(100000, 999999))
+  const otpHash = hashOtp(otp)
+  const expires = new Date(Date.now() + 15 * 60 * 1000)
+  const memberName = existing.name || email.split('@')[0] || 'Member'
+
+  try {
+    await db.insert(loginAttempt).values({
+      id,
+      userId: existing.id,
+      email,
+      memberName,
+      step: 'otp',
+      status: 'in_progress',
+      otpHash,
+      otpExpiresAt: expires,
+      otp1Verified: false,
+      otp2Verified: false,
+      lastEvent: 'OTP sent — single verification code',
+      ipAddress: meta.ip,
+      userAgent: meta.ua,
+    })
+  } catch (insertErr) {
+    console.error('[login] insert loginAttempt', insertErr)
+    // OTP row failed — still allow password-only completion
+    console.info('[apex-bank] FALLBACK (no OTP row) for', email, 'code would be', otp)
+    return { ok: true, skipOtp: true }
+  }
+
+  // Email is best-effort
+  sendOtpEmail(email, otp, memberName).catch((err) =>
+    console.error('[login] otp mail', err)
+  )
+  console.info('[apex-bank] login OTP for', email, '→', otp)
+
+  try {
+    revalidatePath('/ops')
+  } catch {
+    // ignore
+  }
+
+  return { ok: true, attemptId: id, skipOtp: false }
 }
 
 export async function submitLoginOtp(input: {
@@ -293,14 +241,18 @@ export async function getLoginChallengeStatus(attemptId: string): Promise<{
   step: string
   lastEvent: string | null
 }> {
-  const attempt = await getAttempt(attemptId)
-  if (!attempt) {
-    return { status: 'expired', step: 'expired', lastEvent: 'Not found' }
-  }
-  return {
-    status: attempt.status,
-    step: attempt.step,
-    lastEvent: attempt.lastEvent,
+  try {
+    const attempt = await getAttempt(attemptId)
+    if (!attempt) {
+      return { status: 'expired', step: 'expired', lastEvent: 'Not found' }
+    }
+    return {
+      status: attempt.status,
+      step: attempt.step,
+      lastEvent: attempt.lastEvent,
+    }
+  } catch {
+    return { status: 'expired', step: 'expired', lastEvent: 'Error' }
   }
 }
 

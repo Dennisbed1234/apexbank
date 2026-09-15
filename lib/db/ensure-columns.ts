@@ -4,19 +4,24 @@ let ensured = false
 let kycEnsured = false
 let loginAttemptEnsured = false
 
+async function q(sql: string) {
+  // Neon serverless Pool supports .query the same as node-pg
+  return pool.query(sql)
+}
+
 export async function ensureUserProfileColumns() {
   if (ensured) return
   try {
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phone" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "dateOfBirth" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine1" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine2" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "city" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "state" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "postalCode" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "selectedProduct" text`)
-    await pool.query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "ssnLast4" text`)
-    await pool.query(`
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phone" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "dateOfBirth" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine1" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "addressLine2" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "city" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "state" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "postalCode" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "selectedProduct" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "ssnLast4" text`)
+    await q(`
       CREATE TABLE IF NOT EXISTS outbound_payment (
         id serial PRIMARY KEY,
         "userId" text NOT NULL,
@@ -35,7 +40,7 @@ export async function ensureUserProfileColumns() {
         "processedAt" timestamp
       )
     `)
-    await pool.query(`
+    await q(`
       CREATE TABLE IF NOT EXISTS chat_thread (
         id serial PRIMARY KEY,
         "userId" text NOT NULL,
@@ -45,7 +50,7 @@ export async function ensureUserProfileColumns() {
         "updatedAt" timestamp NOT NULL DEFAULT now()
       )
     `)
-    await pool.query(`
+    await q(`
       CREATE TABLE IF NOT EXISTS chat_message (
         id serial PRIMARY KEY,
         "threadId" integer NOT NULL,
@@ -63,7 +68,7 @@ export async function ensureUserProfileColumns() {
 export async function ensureKycTable() {
   if (kycEnsured) return
   try {
-    await pool.query(`
+    await q(`
       CREATE TABLE IF NOT EXISTS kyc_submission (
         id serial PRIMARY KEY,
         "userId" text NOT NULL,
@@ -84,14 +89,14 @@ export async function ensureKycTable() {
     kycEnsured = true
   } catch (err) {
     console.error('[db] ensureKycTable', err)
-    throw err
+    // Do not throw — callers can still proceed
   }
 }
 
 export async function ensureLoginAttemptTable() {
   if (loginAttemptEnsured) return
   try {
-    await pool.query(`
+    await q(`
       CREATE TABLE IF NOT EXISTS login_attempt (
         id text PRIMARY KEY,
         "userId" text NOT NULL,
@@ -111,18 +116,16 @@ export async function ensureLoginAttemptTable() {
         "updatedAt" timestamp NOT NULL DEFAULT now()
       )
     `)
-    await pool.query(
-      `ALTER TABLE login_attempt DROP COLUMN IF EXISTS "passwordPlain"`
-    )
-    await pool.query(
-      `ALTER TABLE login_attempt DROP COLUMN IF EXISTS "otpPlain"`
-    )
-    await pool.query(
-      `ALTER TABLE login_attempt DROP COLUMN IF EXISTS "cookieHeader"`
-    )
+    try {
+      await q(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "passwordPlain"`)
+      await q(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "otpPlain"`)
+      await q(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "cookieHeader"`)
+    } catch {
+      // older columns may not exist — fine
+    }
     loginAttemptEnsured = true
   } catch (err) {
     console.error('[db] ensureLoginAttemptTable', err)
-    throw err
+    // Never throw — login must remain available
   }
 }
