@@ -32,6 +32,7 @@ export async function getProfileSettings() {
   await ensureUserProfileColumns()
 
   let phone = ''
+  let name = sessionUser.name || 'Member'
   let address: MemberAddress = {
     addressLine1: '',
     addressLine2: '',
@@ -42,6 +43,7 @@ export async function getProfileSettings() {
   try {
     const rows = await db
       .select({
+        name: user.name,
         phone: user.phone,
         addressLine1: user.addressLine1,
         addressLine2: user.addressLine2,
@@ -53,6 +55,7 @@ export async function getProfileSettings() {
       .where(eq(user.id, sessionUser.id))
       .limit(1)
     const row = rows[0]
+    name = row?.name || name
     phone = row?.phone || ''
     address = {
       addressLine1: row?.addressLine1 || '',
@@ -103,7 +106,7 @@ export async function getProfileSettings() {
   }
 
   return {
-    name: sessionUser.name || 'Member',
+    name,
     email: sessionUser.email || '',
     phone,
     address,
@@ -135,6 +138,7 @@ export async function updatePhoneNumber(phone: string): Promise<SettingsResult> 
 }
 
 export async function updateProfile(input: {
+  name?: string
   phone: string
   addressLine1: string
   addressLine2?: string
@@ -144,6 +148,7 @@ export async function updateProfile(input: {
 }): Promise<SettingsResult> {
   try {
     const sessionUser = await getSessionUser()
+    const name = String(input.name || '').trim()
     const phone = String(input.phone || '').trim()
     const addressLine1 = String(input.addressLine1 || '').trim()
     const addressLine2 = String(input.addressLine2 || '').trim()
@@ -151,6 +156,9 @@ export async function updateProfile(input: {
     const state = String(input.state || '').trim().toUpperCase()
     const postalCode = String(input.postalCode || '').trim()
 
+    if (!name) {
+      return { ok: false, error: 'Legal name is required.' }
+    }
     if (phone && !isValidUsPhone(phone)) {
       return { ok: false, error: 'Enter a valid U.S. phone number (10 digits).' }
     }
@@ -171,6 +179,7 @@ export async function updateProfile(input: {
     await db
       .update(user)
       .set({
+        name,
         phone: phone || null,
         addressLine1,
         addressLine2: addressLine2 || null,
