@@ -12,6 +12,12 @@ export async function POST(req: Request) {
       name: String(body.name || ''),
       phone: String(body.phone || ''),
       dateOfBirth: String(body.dateOfBirth || ''),
+      addressLine1: String(body.addressLine1 || ''),
+      addressLine2: String(body.addressLine2 || ''),
+      city: String(body.city || ''),
+      state: String(body.state || ''),
+      postalCode: String(body.postalCode || ''),
+      productId: String(body.productId || ''),
       otp: String(body.otp || ''),
     })
     return NextResponse.json(result, { status: result.ok ? 200 : 400 })
