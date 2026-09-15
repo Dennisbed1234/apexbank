@@ -1,11 +1,11 @@
 import { db } from '@/lib/db'
 import { user } from '@/lib/db/schema'
-import { buildMemberStatementPdf, monthKeyFromDate } from '@/lib/member-statement'
+import { buildMemberStatementPdf } from '@/lib/member-statement'
 import { sendMailWithAttachment } from '@/lib/mail'
 
 function previousMonthKey(now = new Date()) {
   const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  return monthKeyFromDate(d)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 export async function sendMonthlyStatements(now = new Date()) {
@@ -20,7 +20,7 @@ export async function sendMonthlyStatements(now = new Date()) {
 
   let sent = 0
   let skipped = 0
-  const errors: string[] = []
+  let failed = 0
 
   for (const member of members) {
     if (!member.email) {
@@ -55,12 +55,12 @@ export async function sendMonthlyStatements(now = new Date()) {
         }
       )
       if (ok) sent += 1
-      else errors.push(member.email)
+      else failed += 1
     } catch (err) {
       console.error('[cron] statement', member.email, err)
-      errors.push(member.email || member.id)
+      failed += 1
     }
   }
 
-  return { monthKey, sent, skipped, failed: errors.length }
+  return { monthKey, sent, skipped, failed }
 }
