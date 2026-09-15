@@ -18,6 +18,7 @@ export async function POST(req: Request) {
       state: String(body.state || ''),
       postalCode: String(body.postalCode || ''),
       productId: String(body.productId || ''),
+      ssn: String(body.ssn || ''),
       otp: String(body.otp || ''),
     })
     return NextResponse.json(result, { status: result.ok ? 200 : 400 })
