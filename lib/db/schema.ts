@@ -21,6 +21,7 @@ export const user = pgTable('user', {
   city: text('city'),
   state: text('state'),
   postalCode: text('postalCode'),
+  selectedProduct: text('selectedProduct'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
