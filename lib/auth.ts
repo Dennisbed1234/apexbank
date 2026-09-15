@@ -71,6 +71,7 @@ export const auth = betterAuth({
           ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
           ...(process.env.AUTH_URL ? [process.env.AUTH_URL] : []),
           'https://nk-theta.vercel.app',
+          'https://apex-bank-theta.vercel.app',
         ]
       : []),
   ],
