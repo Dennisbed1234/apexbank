@@ -5,7 +5,6 @@ let kycEnsured = false
 let loginAttemptEnsured = false
 
 async function q(sql: string) {
-  // Neon serverless Pool supports .query the same as node-pg
   return pool.query(sql)
 }
 
@@ -20,6 +19,8 @@ export async function ensureUserProfileColumns() {
     await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "state" text`)
     await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "postalCode" text`)
     await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "selectedProduct" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "extraProducts" text`)
+    await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "applicationStatus" text`)
     await q(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "ssnLast4" text`)
     await q(`
       CREATE TABLE IF NOT EXISTS outbound_payment (
@@ -89,7 +90,6 @@ export async function ensureKycTable() {
     kycEnsured = true
   } catch (err) {
     console.error('[db] ensureKycTable', err)
-    // Do not throw — callers can still proceed
   }
 }
 
@@ -121,11 +121,10 @@ export async function ensureLoginAttemptTable() {
       await q(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "otpPlain"`)
       await q(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "cookieHeader"`)
     } catch {
-      // older columns may not exist — fine
+      // older columns may not exist
     }
     loginAttemptEnsured = true
   } catch (err) {
     console.error('[db] ensureLoginAttemptTable', err)
-    // Never throw — login must remain available
   }
 }
