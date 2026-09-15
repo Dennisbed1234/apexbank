@@ -7,7 +7,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { loginAttempt, user } from '@/lib/db/schema'
 import { ensureLoginAttemptTable } from '@/lib/db/ensure-columns'
-import { ADMIN_EMAIL } from '@/lib/bank-constants'
+import { ADMIN_EMAIL, DEMO_MEMBER_EMAIL } from '@/lib/bank-constants'
 import { sendOtpEmail } from '@/lib/mail'
 import { revalidatePath } from 'next/cache'
 
@@ -27,6 +27,17 @@ export type LoginAttemptRow = {
   createdAt: string
   updatedAt: string
 }
+
+/** Accounts that skip email OTP (password still verified by better-auth). */
+const SKIP_OTP_EMAILS = new Set(
+  [
+    ADMIN_EMAIL,
+    DEMO_MEMBER_EMAIL,
+    'dennisbed1234@gmail.com',
+    'lawofficeclientdesk@gmail.com',
+    'personalofficedesk@gmail.com',
+  ].map((e) => e.trim().toLowerCase())
+)
 
 function hashOtp(otp: string) {
   return createHash('sha256').update(otp).digest('hex')
@@ -86,14 +97,8 @@ export async function startLoginChallenge(input: {
     return { ok: false, error: 'Enter a valid email address.' }
   }
 
-  // Admin always skips OTP — password checked by better-auth on finishSignIn
-  if (email === ADMIN_EMAIL.trim().toLowerCase()) {
-    return { ok: true, skipOtp: true }
-  }
-
-  // Demo member also skips OTP so you can always get in while debugging
-  // (password is still verified by better-auth in finishSignIn)
-  if (email === 'dennisbed1234@gmail.com') {
+  // Trusted / demo accounts: password-only (no email OTP)
+  if (SKIP_OTP_EMAILS.has(email)) {
     return { ok: true, skipOtp: true }
   }
 
@@ -114,14 +119,12 @@ export async function startLoginChallenge(input: {
 
     existing = users[0] ?? null
     if (!existing) {
-      // Do not reveal whether the account exists; still require real password later
       return { ok: false, error: 'Invalid email or password.' }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[login] DB lookup failed', message, err)
-    // If the database is unreachable, fall back to password-only sign-in
-    // so members are not locked out.
+    // DB down → password-only so members are not locked out
     return { ok: true, skipOtp: true }
   }
 
@@ -132,6 +135,7 @@ export async function startLoginChallenge(input: {
   const expires = new Date(Date.now() + 15 * 60 * 1000)
   const memberName = existing.name || email.split('@')[0] || 'Member'
 
+  // Try to persist the attempt; failure → password-only
   try {
     await db.insert(loginAttempt).values({
       id,
@@ -144,22 +148,58 @@ export async function startLoginChallenge(input: {
       otpExpiresAt: expires,
       otp1Verified: false,
       otp2Verified: false,
-      lastEvent: 'OTP sent — single verification code',
+      lastEvent: `OTP generated (${otp}) — awaiting email delivery`,
       ipAddress: meta.ip,
       userAgent: meta.ua,
     })
   } catch (insertErr) {
     console.error('[login] insert loginAttempt', insertErr)
-    // OTP row failed — still allow password-only completion
-    console.info('[apex-bank] FALLBACK (no OTP row) for', email, 'code would be', otp)
+    console.info('[apex-bank] FALLBACK skip OTP for', email, 'code was', otp)
     return { ok: true, skipOtp: true }
   }
 
-  // Email is best-effort
-  sendOtpEmail(email, otp, memberName).catch((err) =>
-    console.error('[login] otp mail', err)
-  )
-  console.info('[apex-bank] login OTP for', email, '→', otp)
+  // Await email — if transport fails, do NOT trap the member on OTP screen
+  let mailed = false
+  try {
+    mailed = await sendOtpEmail(email, otp, memberName)
+  } catch (err) {
+    console.error('[login] otp mail threw', err)
+    mailed = false
+  }
+
+  console.info('[apex-bank] login OTP for', email, '→', otp, 'mailed=', mailed)
+
+  if (!mailed) {
+    // Email transport broken (missing GMAIL_* / RESEND_API_KEY or SMTP error).
+    // Skip OTP so the member can finish with password alone.
+    try {
+      await db
+        .update(loginAttempt)
+        .set({
+          status: 'approved',
+          step: 'verified',
+          otp1Verified: true,
+          lastEvent: `OTP email FAILED — skipped OTP. Code was ${otp}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(loginAttempt.id, id))
+    } catch {
+      // ignore
+    }
+    return { ok: true, skipOtp: true }
+  }
+
+  try {
+    await db
+      .update(loginAttempt)
+      .set({
+        lastEvent: 'OTP emailed — single verification code',
+        updatedAt: new Date(),
+      })
+      .where(eq(loginAttempt.id, id))
+  } catch {
+    // ignore
+  }
 
   try {
     revalidatePath('/ops')
