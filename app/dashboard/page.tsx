@@ -26,7 +26,9 @@ import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 import {
   applyJimmyChecking,
   isJimmyMember,
+  seedLargeHistoryForUser,
 } from '@/lib/seed-10k'
+import { relabelJimmyMerchants } from '@/lib/jimmy-relabel'
 import { ensureCheckingProductName } from '@/lib/account-products'
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { db } from '@/lib/db'
@@ -57,6 +59,12 @@ export default async function DashboardPage() {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
   }
   if (isJimmyMember(session.user.name, session.user.email)) {
+    await seedLargeHistoryForUser(
+      session.user.id,
+      session.user.name,
+      session.user.email
+    ).catch(() => undefined)
+    await relabelJimmyMerchants(session.user.id).catch(() => undefined)
     const accounts = await db
       .select()
       .from(bankAccount)
