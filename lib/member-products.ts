@@ -9,6 +9,7 @@ export type MemberProductContext = {
   email?: string | null
   selectedProduct?: string | null
   extraProducts?: string[] | null
+  applicationStatus?: string | null
 }
 
 function productIds(ctx: MemberProductContext) {
