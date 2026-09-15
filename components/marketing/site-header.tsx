@@ -18,16 +18,16 @@ export function SiteHeader() {
 
         <nav className="hidden items-center gap-8 md:flex">
           <a
-            href="#features"
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Features
-          </a>
-          <a
             href="#accounts"
             className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             Accounts
+          </a>
+          <a
+            href="#features"
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Features
           </a>
           <a
             href="#security"
