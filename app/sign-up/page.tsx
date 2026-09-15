@@ -1,8 +1,8 @@
 import { auth } from '@/lib/auth'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { AuthForm } from '@/components/auth-form'
 import { ProductPicker } from '@/components/product-picker'
+import { SignupForm } from '@/components/signup-form'
 import { getProduct } from '@/lib/products'
 
 export default async function SignUpPage({
@@ -17,5 +17,5 @@ export default async function SignUpPage({
   const product = getProduct(params.product)
   if (!product) return <ProductPicker />
 
-  return <AuthForm mode="sign-up" productId={product.id} />
+  return <SignupForm product={product} />
 }
