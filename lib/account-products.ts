@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { bankAccount } from '@/lib/db/schema'
 import { ADMIN_EMAIL } from '@/lib/bank-constants'
 import { isJimmyMember } from '@/lib/seed-10k'
+import { getProduct } from '@/lib/products'
 import { and, eq } from 'drizzle-orm'
 
 export const PERSONAL_CHECKING_NAME = 'Personal Checking'
@@ -9,19 +10,24 @@ export const BUSINESS_CHECKING_NAME = 'Business Checking'
 
 export function isBusinessCheckingMember(
   name?: string | null,
-  email?: string | null
+  email?: string | null,
+  selectedProduct?: string | null
 ) {
+  const product = getProduct(selectedProduct)
+  if (product?.id === 'business-checking') return true
   const e = String(email || '').trim().toLowerCase()
   if (e === ADMIN_EMAIL) return true
   return isJimmyMember(name, email)
 }
 
-/** Product name printed on statements, cards, and the dashboard. */
 export function checkingProductName(
   name?: string | null,
-  email?: string | null
+  email?: string | null,
+  selectedProduct?: string | null
 ) {
-  return isBusinessCheckingMember(name, email)
+  const product = getProduct(selectedProduct)
+  if (product?.checkingName) return product.checkingName
+  return isBusinessCheckingMember(name, email, selectedProduct)
     ? BUSINESS_CHECKING_NAME
     : PERSONAL_CHECKING_NAME
 }
@@ -29,18 +35,10 @@ export function checkingProductName(
 export function displayCheckingName(
   storedName: string | null | undefined,
   memberName?: string | null,
-  memberEmail?: string | null
+  memberEmail?: string | null,
+  selectedProduct?: string | null
 ) {
-  const product = checkingProductName(memberName, memberEmail)
-  const stored = String(storedName || '').trim()
-  if (product === PERSONAL_CHECKING_NAME) {
-    if (/business/i.test(stored)) return PERSONAL_CHECKING_NAME
-    if (/everyday|personal|checking/i.test(stored)) return stored.includes('Personal')
-      ? PERSONAL_CHECKING_NAME
-      : PERSONAL_CHECKING_NAME
-    return PERSONAL_CHECKING_NAME
-  }
-  return BUSINESS_CHECKING_NAME
+  return checkingProductName(memberName, memberEmail, selectedProduct)
 }
 
 export async function ensureCheckingProductName(input: {
@@ -48,8 +46,13 @@ export async function ensureCheckingProductName(input: {
   checkingId: number
   memberName?: string | null
   memberEmail?: string | null
+  selectedProduct?: string | null
 }) {
-  const name = checkingProductName(input.memberName, input.memberEmail)
+  const name = checkingProductName(
+    input.memberName,
+    input.memberEmail,
+    input.selectedProduct
+  )
   await db
     .update(bankAccount)
     .set({ name })
