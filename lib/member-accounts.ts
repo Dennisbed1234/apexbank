@@ -30,6 +30,7 @@ export async function loadMemberProductContext(userId: string): Promise<MemberPr
       email: user.email,
       selectedProduct: user.selectedProduct,
       extraProducts: user.extraProducts,
+      applicationStatus: user.applicationStatus,
     })
     .from(user)
     .where(eq(user.id, userId))
@@ -41,6 +42,7 @@ export async function loadMemberProductContext(userId: string): Promise<MemberPr
     email: row?.email,
     selectedProduct: row?.selectedProduct,
     extraProducts: parseExtraProducts(row?.extraProducts),
+    applicationStatus: row?.applicationStatus,
   }
 }
 
