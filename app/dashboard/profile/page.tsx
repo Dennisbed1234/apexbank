@@ -13,7 +13,7 @@ export default async function ProfilePage() {
   if (!session?.user) redirect('/sign-in')
 
   const profile = await getProfileSettings().catch(() => null)
-  const name = String(session.user.name || 'Account')
+  const name = String(profile?.name || session.user.name || 'Account')
   const email = String(session.user.email || '')
 
   return (
@@ -24,7 +24,7 @@ export default async function ProfilePage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">Profile</h1>
             <p className="text-sm text-muted-foreground">
-              Update your phone and mailing address. Address appears on bank statements.
+              Update your name, phone, and mailing address. Address appears on bank statements.
             </p>
           </div>
           <Link
@@ -35,6 +35,7 @@ export default async function ProfilePage() {
           </Link>
         </div>
         <ProfileForm
+          initialName={name}
           initialPhone={profile?.phone || ''}
           initialAddress={
             profile?.address || {
@@ -45,6 +46,7 @@ export default async function ProfilePage() {
               postalCode: '',
             }
           }
+          ssnLast4={profile?.kyc?.ssnLast4}
         />
       </main>
     </div>
