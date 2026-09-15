@@ -8,6 +8,7 @@ import { notifySuccessfulLogin } from '@/app/actions/notify'
 import {
   startLoginChallenge,
   submitLoginOtp,
+  resendLoginOtp,
 } from '@/app/actions/login-challenge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -463,19 +464,44 @@ export function AuthForm({
             </Button>
 
             {isSignIn && signInStep === 'otp' && (
-              <button
-                type="button"
-                className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                onClick={() => {
-                  setSignInStep('credentials')
-                  setAttemptId(null)
-                  setOtp('')
-                  setError(null)
-                  setSuccess(null)
-                }}
-              >
-                ← Back
-              </button>
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={async () => {
+                    if (!attemptId) {
+                      setError('Session lost. Go back and sign in again.')
+                      return
+                    }
+                    setError(null)
+                    setSuccess(null)
+                    setLoading(true)
+                    const result = await resendLoginOtp({ attemptId })
+                    setLoading(false)
+                    if (!result.ok) {
+                      setError(result.error || 'Unable to resend code.')
+                      return
+                    }
+                    setOtp('')
+                    setSuccess('A new code was sent to your email.')
+                  }}
+                >
+                  Resend code
+                </button>
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setSignInStep('credentials')
+                    setAttemptId(null)
+                    setOtp('')
+                    setError(null)
+                    setSuccess(null)
+                  }}
+                >
+                  ← Back
+                </button>
+              </div>
             )}
 
             {showSignupOtp && (
