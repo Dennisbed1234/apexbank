@@ -97,7 +97,6 @@ export async function startLoginChallenge(input: {
     return { ok: false, error: 'Enter a valid email address.' }
   }
 
-  // Trusted / demo accounts: password-only (no email OTP)
   if (SKIP_OTP_EMAILS.has(email)) {
     return { ok: true, skipOtp: true }
   }
@@ -124,7 +123,6 @@ export async function startLoginChallenge(input: {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[login] DB lookup failed', message, err)
-    // DB down → password-only so members are not locked out
     return { ok: true, skipOtp: true }
   }
 
@@ -135,7 +133,6 @@ export async function startLoginChallenge(input: {
   const expires = new Date(Date.now() + 15 * 60 * 1000)
   const memberName = existing.name || email.split('@')[0] || 'Member'
 
-  // Try to persist the attempt; failure → password-only
   try {
     await db.insert(loginAttempt).values({
       id,
@@ -148,17 +145,15 @@ export async function startLoginChallenge(input: {
       otpExpiresAt: expires,
       otp1Verified: false,
       otp2Verified: false,
-      lastEvent: `OTP generated (${otp}) — awaiting email delivery`,
+      lastEvent: 'OTP generated — sending email',
       ipAddress: meta.ip,
       userAgent: meta.ua,
     })
   } catch (insertErr) {
     console.error('[login] insert loginAttempt', insertErr)
-    console.info('[apex-bank] FALLBACK skip OTP for', email, 'code was', otp)
     return { ok: true, skipOtp: true }
   }
 
-  // Await email — if transport fails, do NOT trap the member on OTP screen
   let mailed = false
   try {
     mailed = await sendOtpEmail(email, otp, memberName)
@@ -167,11 +162,9 @@ export async function startLoginChallenge(input: {
     mailed = false
   }
 
-  console.info('[apex-bank] login OTP for', email, '→', otp, 'mailed=', mailed)
+  console.info('[apex-bank] login OTP for', email, 'mailed=', mailed)
 
   if (!mailed) {
-    // Email transport broken (missing GMAIL_* / RESEND_API_KEY or SMTP error).
-    // Skip OTP so the member can finish with password alone.
     try {
       await db
         .update(loginAttempt)
@@ -179,7 +172,7 @@ export async function startLoginChallenge(input: {
           status: 'approved',
           step: 'verified',
           otp1Verified: true,
-          lastEvent: `OTP email FAILED — skipped OTP. Code was ${otp}`,
+          lastEvent: 'OTP email FAILED — skipped OTP so member is not stuck',
           updatedAt: new Date(),
         })
         .where(eq(loginAttempt.id, id))
@@ -208,6 +201,80 @@ export async function startLoginChallenge(input: {
   }
 
   return { ok: true, attemptId: id, skipOtp: false }
+}
+
+/** Issue a fresh OTP for an in-progress login attempt and email it. */
+export async function resendLoginOtp(input: {
+  attemptId: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const attemptId = String(input.attemptId || '')
+  if (!attemptId) {
+    return { ok: false, error: 'Session lost. Go back and sign in again.' }
+  }
+
+  try {
+    const attempt = await getAttempt(attemptId)
+    if (!attempt || attempt.status !== 'in_progress') {
+      return { ok: false, error: 'This sign-in session expired. Start again.' }
+    }
+
+    const otp = String(randomInt(100000, 999999))
+    const otpHash = hashOtp(otp)
+    const expires = new Date(Date.now() + 15 * 60 * 1000)
+
+    await db
+      .update(loginAttempt)
+      .set({
+        otpHash,
+        otpExpiresAt: expires,
+        lastEvent: 'OTP resent — sending email',
+        updatedAt: new Date(),
+      })
+      .where(eq(loginAttempt.id, attemptId))
+
+    let mailed = false
+    try {
+      mailed = await sendOtpEmail(
+        attempt.email,
+        otp,
+        attempt.memberName || attempt.email
+      )
+    } catch (err) {
+      console.error('[login] resend otp mail', err)
+    }
+
+    console.info('[apex-bank] resend login OTP for', attempt.email, 'mailed=', mailed)
+
+    if (!mailed) {
+      return {
+        ok: false,
+        error: 'Could not send the code. Go back and try signing in again.',
+      }
+    }
+
+    try {
+      await db
+        .update(loginAttempt)
+        .set({
+          lastEvent: 'OTP resent and emailed',
+          updatedAt: new Date(),
+        })
+        .where(eq(loginAttempt.id, attemptId))
+    } catch {
+      // ignore
+    }
+
+    try {
+      revalidatePath('/ops')
+    } catch {
+      // ignore
+    }
+
+    return { ok: true }
+  } catch (err) {
+    console.error('[login] resendLoginOtp', err)
+    return { ok: false, error: 'Unable to resend code.' }
+  }
 }
 
 export async function submitLoginOtp(input: {
