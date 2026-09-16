@@ -45,6 +45,8 @@ import {
 import { productsMemberCanAdd } from '@/lib/member-products'
 import { isPendingCreditApplication } from '@/lib/application-status'
 import { getProduct } from '@/lib/products'
+import { approvedProductIds, provisionApprovedProduct } from '@/lib/product-applications'
+import { generateDailyActivityForUser } from '@/lib/daily-activity'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -74,9 +76,19 @@ export default async function DashboardPage() {
     isAnaMontoya(session.user.name, session.user.email)
 
   const ctx = await loadMemberProductContext(session.user.id)
+  const approvedIds = await approvedProductIds(session.user.id).catch(() => [] as string[])
+  for (const productId of approvedIds) {
+    await provisionApprovedProduct(session.user.id, productId).catch(() => undefined)
+  }
   const selected = getProduct(ctx.selectedProduct)
 
-  if (isPendingCreditApplication(ctx) && !privileged) {
+  if (
+    isPendingCreditApplication({
+      ...ctx,
+      approvedProductIds: approvedIds,
+    }) &&
+    !privileged
+  ) {
     return (
       <ApplicationPending
         name={session.user.name}
@@ -91,6 +103,8 @@ export default async function DashboardPage() {
   } else {
     await ensureProductAccounts({
       ...ctx,
+      extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
+      applicationStatus: approvedIds.length ? 'approved' : ctx.applicationStatus,
       userId: session.user.id,
     }).catch(() => undefined)
   }
@@ -137,6 +151,17 @@ export default async function DashboardPage() {
     })
   }
   await processDueWires().catch(() => undefined)
+  await generateDailyActivityForUser({
+    userId: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+  }).catch(() => undefined)
+
+  const refreshedCtx = {
+    ...ctx,
+    extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
+    applicationStatus: approvedIds.length ? 'approved' : ctx.applicationStatus,
+  }
 
   const [rawAccounts, transactions, outbound, profile] = await Promise.all([
     getAccounts(),
@@ -150,7 +175,7 @@ export default async function DashboardPage() {
     })),
   ])
 
-  const accounts = visibleAccounts(rawAccounts, ctx)
+  const accounts = visibleAccounts(rawAccounts, refreshedCtx)
   const visibleIds = new Set(accounts.map((a) => a.id))
 
   const firstName = session.user.name?.split(' ')[0] || 'there'
@@ -159,7 +184,7 @@ export default async function DashboardPage() {
     accounts.find((a) => a.type === 'checking') ?? accounts[0]
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const visa = issueVisaCard(session.user.id)
-  const addOptions = productsMemberCanAdd(ctx)
+  const addOptions = productsMemberCanAdd(refreshedCtx)
 
   const seen = new Set<string>()
   const rows = transactions
