@@ -11,6 +11,7 @@ import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
 import { getProduct, isValidUsState, isValidUsZip } from '@/lib/products'
 import { isValidSsn, ssnLast4 } from '@/lib/ssn'
 import { statusForNewProduct } from '@/lib/application-status'
+import { submitProductApplication } from '@/lib/product-applications'
 import {
   consumeSignupVerification,
   emailHasVerifiedSignupOtp,
@@ -99,7 +100,7 @@ export async function submitSignupOtp(input: {
     const rows = await db
       .select()
       .from(verification)
-      .where(eq(verification.identifier, signupOtpKey(email)))
+    .where(eq(verification.identifier, signupOtpKey(email)))
       .limit(1)
     const row = rows[0]
     if (!row) {
@@ -270,6 +271,7 @@ async function saveSignupProfile(input: {
       applicationStatus: statusForNewProduct(input.productId),
     } as any)
     .where(eq(user.id, rows[0].id))
+  await submitProductApplication(rows[0].id, input.productId).catch(() => undefined)
 }
 
 export async function resendSignupOtp(input: {
