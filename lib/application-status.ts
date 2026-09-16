@@ -3,7 +3,9 @@ import { getProduct } from '@/lib/products'
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected'
 
 export function statusForNewProduct(productId?: string | null): ApplicationStatus {
-  return getProduct(productId) ? 'pending' : 'approved'
+  const product = getProduct(productId)
+  if (product?.category === 'credit-card') return 'pending'
+  return 'approved'
 }
 
 export function isCreditCardProduct(productId?: string | null) {
@@ -17,5 +19,8 @@ export function isPendingCreditApplication(input: {
 }) {
   if ((input.approvedProductIds || []).length > 0) return false
   if (String(input.applicationStatus || '') === 'approved') return false
-  return String(input.applicationStatus || 'pending') !== 'approved'
+  return (
+    isCreditCardProduct(input.selectedProduct) &&
+    String(input.applicationStatus || 'pending') !== 'approved'
+  )
 }
