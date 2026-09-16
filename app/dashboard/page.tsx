@@ -45,8 +45,9 @@ import {
 import { productsMemberCanAdd } from '@/lib/member-products'
 import { isPendingCreditApplication } from '@/lib/application-status'
 import { getProduct } from '@/lib/products'
-import { approvedProductIds, provisionApprovedProduct } from '@/lib/product-applications'
+import { provisionApprovedProduct } from '@/lib/product-applications'
 import { generateDailyActivityForUser } from '@/lib/daily-activity'
+import { activateApprovedMember, isDawnaMember } from '@/lib/approved-member'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -73,16 +74,26 @@ export default async function DashboardPage() {
     email === DEMO_MEMBER_EMAIL ||
     isJimmyMember(session.user.name, session.user.email) ||
     isDennisBedendender(session.user.name, session.user.email) ||
-    isAnaMontoya(session.user.name, session.user.email)
+    isAnaMontoya(session.user.name, session.user.email) ||
+    isDawnaMember(session.user.name, session.user.email)
 
   const ctx = await loadMemberProductContext(session.user.id)
-  const approvedIds = await approvedProductIds(session.user.id).catch(() => [] as string[])
+  const activated = await activateApprovedMember({
+    userId: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+    selectedProduct: ctx.selectedProduct,
+    applicationStatus: ctx.applicationStatus,
+  }).catch(() => ({ open: false, approvedIds: [] as string[], hasAccounts: false }))
+
+  const approvedIds = activated.approvedIds || []
   for (const productId of approvedIds) {
     await provisionApprovedProduct(session.user.id, productId).catch(() => undefined)
   }
   const selected = getProduct(ctx.selectedProduct)
 
   if (
+    !activated.open &&
     isPendingCreditApplication({
       ...ctx,
       approvedProductIds: approvedIds,
@@ -104,7 +115,7 @@ export default async function DashboardPage() {
     await ensureProductAccounts({
       ...ctx,
       extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
-      applicationStatus: approvedIds.length ? 'approved' : ctx.applicationStatus,
+      applicationStatus: 'approved',
       userId: session.user.id,
     }).catch(() => undefined)
   }
@@ -160,7 +171,7 @@ export default async function DashboardPage() {
   const refreshedCtx = {
     ...ctx,
     extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
-    applicationStatus: approvedIds.length ? 'approved' : ctx.applicationStatus,
+    applicationStatus: 'approved',
   }
 
   const [rawAccounts, transactions, outbound, profile] = await Promise.all([
