@@ -13,31 +13,32 @@ export function CardApps({ rows }: { rows: CardApplicationRow[] }) {
   const router = useRouter()
   const [pending, start] = useTransition()
 
-  function decide(userId: string, decision: 'approved' | 'rejected') {
+  function decide(row: CardApplicationRow, decision: 'approved' | 'rejected') {
+    const key = row.id ? String(row.id) : row.userId
     start(async () => {
-      const result = await reviewCardApplication(userId, decision)
+      const result = await reviewCardApplication(key, decision)
       if (!result.ok) {
         toast.error(result.error)
         return
       }
-      toast.success(decision === 'approved' ? 'Card approved and emailed' : 'Application declined')
+      toast.success(decision === 'approved' ? 'Approved and emailed' : 'Application declined')
       router.refresh()
     })
   }
 
   return (
     <section className="mt-8 rounded-xl border border-border bg-card p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-foreground">Credit card applications</h2>
+      <h2 className="text-sm font-semibold text-foreground">Product applications</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Approve before the member can open a card dashboard. An email is sent on each decision.
+        Approve or decline checking, savings, IRA, and credit card requests. The member is emailed on each decision.
       </p>
       <div className="mt-4 space-y-3">
         {rows.length === 0 && (
-          <p className="text-sm text-muted-foreground">No card applications.</p>
+          <p className="text-sm text-muted-foreground">No applications.</p>
         )}
         {rows.map((row) => (
           <div
-            key={row.userId}
+            key={`${row.userId}-${row.productId}-${row.id}`}
             className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
           >
             <div>
@@ -48,7 +49,7 @@ export function CardApps({ rows }: { rows: CardApplicationRow[] }) {
             </div>
             {row.status !== 'approved' && (
               <div className="flex gap-2">
-                <Button type="button" size="sm" disabled={pending} onClick={() => decide(row.userId, 'approved')}>
+                <Button type="button" size="sm" disabled={pending} onClick={() => decide(row, 'approved')}>
                   Approve
                 </Button>
                 <Button
@@ -56,7 +57,7 @@ export function CardApps({ rows }: { rows: CardApplicationRow[] }) {
                   size="sm"
                   variant="destructive"
                   disabled={pending}
-                  onClick={() => decide(row.userId, 'rejected')}
+                  onClick={() => decide(row, 'rejected')}
                 >
                   Decline
                 </Button>
