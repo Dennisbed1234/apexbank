@@ -55,13 +55,22 @@ export async function submitProductApplication(userId: string, productId: string
     `INSERT INTO product_application ("userId", "productId", status) VALUES ($1, $2, 'pending') RETURNING id`,
     [userId, productId]
   )
-  await db
-    .update(user)
-    .set({
-      selectedProduct: productId,
-      applicationStatus: 'pending',
-    } as any)
-    .where(eq(user.id, userId))
+  const member = (
+    await db
+      .select({ selectedProduct: user.selectedProduct, applicationStatus: user.applicationStatus })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+  )[0]
+  if (!member?.selectedProduct) {
+    await db
+      .update(user)
+      .set({
+        selectedProduct: productId,
+        applicationStatus: product.category === 'credit-card' ? 'pending' : member?.applicationStatus || 'pending',
+      } as any)
+      .where(eq(user.id, userId))
+  }
   return { id: Number(inserted.rows[0].id), status: 'pending' }
 }
 
@@ -82,21 +91,6 @@ export async function listProductApplications(): Promise<ProductApplication[]> {
     memberEmail: row.email || '',
     productName: getProduct(row.productId)?.name || row.productId,
   }))
-}
-
-export async function latestApplicationForUser(userId: string) {
-  await ensureProductApplicationTable()
-  const result = await pool.query(
-    `SELECT id, "productId", status FROM product_application WHERE "userId" = $1 ORDER BY id DESC LIMIT 1`,
-    [userId]
-  )
-  return result.rows[0]
-    ? {
-        id: Number(result.rows[0].id),
-        productId: String(result.rows[0].productId),
-        status: String(result.rows[0].status),
-      }
-    : null
 }
 
 export async function approvedProductIds(userId: string) {
@@ -123,9 +117,19 @@ export async function reviewProductApplication(
     `UPDATE product_application SET status = $1, "updatedAt" = now() WHERE id = $2`,
     [decision, applicationId]
   )
+  const member = (
+    await db
+      .select({ selectedProduct: user.selectedProduct })
+      .from(user)
+      .where(eq(user.id, row.userId))
+      .limit(1)
+  )[0]
   await db
     .update(user)
-    .set({ applicationStatus: decision, selectedProduct: row.productId } as any)
+    .set({
+      applicationStatus: decision,
+      selectedProduct: member?.selectedProduct || row.productId,
+    } as any)
     .where(eq(user.id, row.userId))
 
   if (decision === 'approved') {
@@ -141,7 +145,12 @@ export async function provisionApprovedProduct(userId: string, productId: string
   const product = getProduct(productId)
   if (!product) return
   const member = await db
-    .select({ extraProducts: user.extraProducts, selectedProduct: user.selectedProduct, name: user.name, email: user.email })
+    .select({
+      extraProducts: user.extraProducts,
+      selectedProduct: user.selectedProduct,
+      name: user.name,
+      email: user.email,
+    })
     .from(user)
     .where(eq(user.id, userId))
     .limit(1)
@@ -150,7 +159,6 @@ export async function provisionApprovedProduct(userId: string, productId: string
   await db
     .update(user)
     .set({
-      selectedProduct: member[0]?.selectedProduct || productId,
       extraProducts: serializeExtraProducts(extras),
       applicationStatus: 'approved',
     } as any)
@@ -165,7 +173,7 @@ export async function provisionApprovedProduct(userId: string, productId: string
           : 'savings'
         : 'credit'
   const existing = await db.select().from(bankAccount).where(eq(bankAccount.userId, userId))
-  if (existing.some((account) => account.type === kind && (kind !== 'credit' || account.name === product.name))) {
+  if (kind === 'credit' && existing.some((account) => account.type === 'credit' && account.name === product.name)) {
     return
   }
   if (kind !== 'credit' && existing.some((account) => account.type === kind)) return
@@ -178,6 +186,6 @@ export async function provisionApprovedProduct(userId: string, productId: string
     }),
     type: kind,
     accountNumber: kind === 'checking' ? SHARED_CHECKING_NUMBER : randomAccountNumber(),
-    balanceCents: kind === 'credit' ? 0 : 0,
+    balanceCents: 0,
   })
 }
