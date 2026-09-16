@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq, gte } from 'drizzle-orm'
 import { isDennisBedendender, isJimmyMember } from '@/lib/seed-10k'
 import { isAnaMontoya } from '@/lib/seed-ana'
 
@@ -20,8 +20,19 @@ const BUSINESS = [
   'AMAZON BUSINESS', 'GRAINGER INDUSTRIAL FL', 'ULINE SHIPPING SUPPLY',
 ]
 
+const CARD = [
+  'AMAZON.COM', 'TARGET', 'UBER TRIP', 'DELTA AIR LINES', 'STARBUCKS',
+  'WHOLEFDS', 'APPLE.COM/BILL', 'NETFLIX.COM', 'SHELL OIL', 'CHICK-FIL-A',
+]
+
 function pick(list: string[], seed: number) {
   return list[Math.abs(seed) % list.length]
+}
+
+function startOfToday() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
 }
 
 export async function generateDailyActivityForUser(input: {
@@ -30,58 +41,64 @@ export async function generateDailyActivityForUser(input: {
   email?: string | null
 }) {
   const accounts = await db.select().from(bankAccount).where(eq(bankAccount.userId, input.userId))
-  const checking = accounts.find((a) => a.type === 'checking')
-  if (!checking) return { added: 0 }
-
-  const latest = await db
-    .select({ createdAt: transaction.createdAt })
-    .from(transaction)
-    .where(and(eq(transaction.userId, input.userId), eq(transaction.accountId, checking.id)))
-    .orderBy(desc(transaction.createdAt))
-    .limit(1)
-
-  const last = latest[0]?.createdAt ? new Date(latest[0].createdAt) : null
-  const now = new Date()
-  if (last && now.getTime() - last.getTime() < 18 * 60 * 60 * 1000) {
-    return { added: 0 }
-  }
-
+  if (!accounts.length) return { added: 0 }
+  const today = startOfToday()
   const jimmy = isJimmyMember(input.name, input.email)
-  const catalog = jimmy ? BUSINESS : PERSONAL
-  const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate()
-  const debitName = pick(catalog, seed + checking.id)
-  const debitCents = jimmy ? -(2800 + (seed % 18000)) : -(450 + (seed % 4200))
+  let added = 0
 
-  await db.insert(transaction).values({
-    userId: input.userId,
-    accountId: checking.id,
-    amountCents: debitCents,
-    type: 'debit',
-    description: debitName,
-    category: jimmy ? 'Operations' : 'Shopping',
-    counterparty: debitName,
-    createdAt: now,
-  })
+  for (const account of accounts) {
+    if (!['checking', 'credit', 'savings'].includes(account.type)) continue
+    const existingToday = await db
+      .select({ id: transaction.id })
+      .from(transaction)
+      .where(
+        and(
+          eq(transaction.userId, input.userId),
+          eq(transaction.accountId, account.id),
+          gte(transaction.createdAt, today)
+        )
+      )
+      .limit(1)
+    if (existingToday[0]) continue
 
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: checking.balanceCents + debitCents })
-    .where(and(eq(bankAccount.id, checking.id), eq(bankAccount.userId, input.userId)))
+    const seed =
+      today.getFullYear() * 10000 +
+      (today.getMonth() + 1) * 100 +
+      today.getDate() +
+      account.id
+    const catalog = account.type === 'credit' ? CARD : jimmy ? BUSINESS : PERSONAL
+    const debitName = pick(catalog, seed)
+    const debitCents =
+      account.type === 'savings'
+        ? 18 + (seed % 40)
+        : jimmy
+          ? -(2800 + (seed % 18000))
+          : -(450 + (seed % 4200))
+    const now = new Date()
 
-  return { added: 1 }
+    await db.insert(transaction).values({
+      userId: input.userId,
+      accountId: account.id,
+      amountCents: debitCents,
+      type: debitCents >= 0 ? 'credit' : 'debit',
+      description: account.type === 'savings' ? 'INTEREST CREDIT' : debitName,
+      category: debitCents >= 0 ? 'Interest' : jimmy ? 'Operations' : 'Shopping',
+      counterparty: debitName,
+      createdAt: now,
+    })
+    await db
+      .update(bankAccount)
+      .set({ balanceCents: account.balanceCents + debitCents })
+      .where(and(eq(bankAccount.id, account.id), eq(bankAccount.userId, input.userId)))
+    added += 1
+  }
+  return { added }
 }
 
 export async function generateDailyActivityForNamedMembers() {
   const members = await db.select({ id: user.id, name: user.name, email: user.email }).from(user)
   const results = []
   for (const member of members) {
-    if (
-      !isDennisBedendender(member.name, member.email) &&
-      !isAnaMontoya(member.name, member.email) &&
-      !isJimmyMember(member.name, member.email)
-    ) {
-      continue
-    }
     results.push({
       email: member.email,
       ...(await generateDailyActivityForUser({
