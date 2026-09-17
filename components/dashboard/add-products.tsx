@@ -13,6 +13,7 @@ export function AddProducts({
 }) {
   const router = useRouter()
   const [pending, setPending] = useState<string | null>(null)
+  const [chosen, setChosen] = useState<string | null>(null)
   if (!options.length) return null
 
   async function apply(productId: string, name: string) {
@@ -23,7 +24,8 @@ export function AddProducts({
         toast.error(result.error)
         return
       }
-      toast.success(`${name} submitted for review`)
+      setChosen(name)
+      toast.success(`${name} selected`)
       router.refresh()
     } catch {
       toast.error('Could not submit that application.')
@@ -33,12 +35,8 @@ export function AddProducts({
   }
 
   return (
-    <section className="rounded-2xl border border-dashed border-border bg-card/60 p-5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-primary">Add a product</p>
-      <h2 className="mt-1 text-lg font-bold tracking-tight">Apply for another Nicolet product</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Choose checking, savings, IRA, or a card. An officer must approve the request before it appears on your dashboard.
-      </p>
+    <section className="rounded-2xl border border-border bg-card/60 p-5">
+      <h2 className="text-lg font-bold tracking-tight">Products</h2>
       <div className="mt-4 flex flex-wrap gap-2">
         {options.map((option) => (
           <button
@@ -53,6 +51,11 @@ export function AddProducts({
           </button>
         ))}
       </div>
+      {chosen && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          {chosen} was submitted. An officer will review it before the product is added to this dashboard.
+        </p>
+      )}
     </section>
   )
 }

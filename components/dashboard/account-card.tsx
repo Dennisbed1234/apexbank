@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Eye, EyeOff, Landmark, PiggyBank, Trees } from 'lucide-react'
+import { Check, Copy, CreditCard, Eye, EyeOff, Landmark, PiggyBank, Trees } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, maskAccountNumber } from '@/lib/format'
 import { ROUTING_NUMBER } from '@/lib/bank-constants'
+import { cardFigures } from '@/lib/credit-ledger'
 import type { BankAccount } from '@/lib/db/schema'
 
 function CopyField({
@@ -48,25 +49,31 @@ function CopyField({
   )
 }
 
-export function AccountCard({ account }: { account: BankAccount }) {
+export function AccountCard({ account }: { account: BankAccount & { creditLimitCents?: number } }) {
   const [revealed, setRevealed] = useState(false)
   const isSavings = account.type === 'savings'
   const isRetirement = account.type === 'retirement'
+  const isCredit = account.type === 'credit'
+  const figures = cardFigures(account)
 
   return (
-    <Card className="relative overflow-hidden">
+    <Card className={isCredit ? 'relative overflow-hidden border-primary/30 bg-gradient-to-br from-slate-950 to-slate-800 text-white' : 'relative overflow-hidden'}>
       <CardHeader className="flex-row items-start justify-between gap-2">
         <div className="flex items-center gap-3">
           <div
             className={
-              isRetirement
-                ? 'flex size-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                : isSavings
-                  ? 'flex size-10 items-center justify-center rounded-xl bg-accent/20 text-accent-foreground'
-                  : 'flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary'
+              isCredit
+                ? 'flex size-10 items-center justify-center rounded-xl bg-white/15 text-white'
+                : isRetirement
+                  ? 'flex size-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                  : isSavings
+                    ? 'flex size-10 items-center justify-center rounded-xl bg-accent/20 text-accent-foreground'
+                    : 'flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary'
             }
           >
-            {isRetirement ? (
+            {isCredit ? (
+              <CreditCard className="size-5" />
+            ) : isRetirement ? (
               <Trees className="size-5" />
             ) : isSavings ? (
               <PiggyBank className="size-5" />
@@ -75,39 +82,62 @@ export function AccountCard({ account }: { account: BankAccount }) {
             )}
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground">
+            <p className={`text-sm font-semibold ${isCredit ? 'text-white' : 'text-foreground'}`}>
               {account.name}
             </p>
-            <p className="text-xs text-muted-foreground">
-              Acct {maskAccountNumber(account.accountNumber)}
+            <p className={`text-xs ${isCredit ? 'text-white/70' : 'text-muted-foreground'}`}>
+              {isCredit ? 'Visa ending' : 'Acct'} {maskAccountNumber(account.accountNumber)}
             </p>
           </div>
         </div>
-        <Badge variant="secondary" className="capitalize">
-          {account.type}
+        <Badge variant={isCredit ? 'secondary' : 'secondary'} className="capitalize">
+          {isCredit ? 'Credit card' : account.type}
         </Badge>
       </CardHeader>
       <CardContent>
-        <p className="text-xs text-muted-foreground">
-          {isRetirement ? 'Retirement balance' : 'Available balance'}
-        </p>
-        <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-          {formatCurrency(account.balanceCents, account.currency)}
-        </p>
+        {isCredit ? (
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs text-white/70">Available credit</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-white">
+                {formatCurrency(figures.availableCents, account.currency)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-white/10 px-3 py-2">
+                <p className="text-[11px] text-white/70">Current balance</p>
+                <p className="font-semibold tabular-nums">{formatCurrency(figures.currentCents, account.currency)}</p>
+              </div>
+              <div className="rounded-lg bg-white/10 px-3 py-2">
+                <p className="text-[11px] text-white/70">Credit limit</p>
+                <p className="font-semibold tabular-nums">{formatCurrency(figures.limitCents, account.currency)}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              {isRetirement ? 'Retirement balance' : 'Available balance'}
+            </p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">
+              {formatCurrency(account.balanceCents, account.currency)}
+            </p>
+          </>
+        )}
 
         <button
           type="button"
           onClick={() => setRevealed((v) => !v)}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
+          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${isCredit ? 'border-white/20 bg-white/10 text-white hover:bg-white/15' : 'border-border/70 bg-muted/40 text-foreground hover:bg-muted'}`}
         >
           {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          {revealed ? 'Hide account details' : 'Tap to view account & routing'}
+          {revealed ? 'Hide account details' : isCredit ? 'Tap to view card number' : 'Tap to view account & routing'}
         </button>
 
         {revealed && (
-          <div className="mt-3 space-y-2 rounded-lg bg-muted/50 p-2">
-            <CopyField label="Routing number" value={ROUTING_NUMBER} />
-            <CopyField label="Account number" value={account.accountNumber} />
+          <div className={`mt-3 space-y-2 rounded-lg p-2 ${isCredit ? 'bg-white/10' : 'bg-muted/50'}`}>
+            {!isCredit && <CopyField label="Routing number" value={ROUTING_NUMBER} />}
+            <CopyField label={isCredit ? 'Card account number' : 'Account number'} value={account.accountNumber} />
           </div>
         )}
       </CardContent>
