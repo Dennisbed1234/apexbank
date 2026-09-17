@@ -81,6 +81,9 @@ export const bankAccount = pgTable('bank_account', {
   balanceCents: bigint('balanceCents', { mode: 'number' })
     .notNull()
     .default(0),
+  creditLimitCents: bigint('creditLimitCents', { mode: 'number' })
+    .notNull()
+    .default(0),
   currency: text('currency').notNull().default('USD'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
 })

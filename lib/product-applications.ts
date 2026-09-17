@@ -3,6 +3,7 @@ import { bankAccount, user } from '@/lib/db/schema'
 import { SHARED_CHECKING_NUMBER } from '@/lib/bank-constants'
 import { getProduct } from '@/lib/products'
 import { defaultAccountName, parseExtraProducts, serializeExtraProducts } from '@/lib/member-products'
+import { DEFAULT_CARD_LIMIT_CENTS, ensureCreditLimitColumn } from '@/lib/credit-ledger'
 import { eq } from 'drizzle-orm'
 
 export type ProductApplication = {
@@ -144,6 +145,7 @@ export async function reviewProductApplication(
 export async function provisionApprovedProduct(userId: string, productId: string) {
   const product = getProduct(productId)
   if (!product) return
+  await ensureCreditLimitColumn()
   const member = await db
     .select({
       extraProducts: user.extraProducts,
@@ -173,11 +175,18 @@ export async function provisionApprovedProduct(userId: string, productId: string
           : 'savings'
         : 'credit'
   const existing = await db.select().from(bankAccount).where(eq(bankAccount.userId, userId))
-  if (kind === 'credit' && existing.some((account) => account.type === 'credit' && account.name === product.name)) {
-    return
+  if (kind === 'credit') {
+    const card = existing.find((account) => account.type === 'credit' && account.name === product.name)
+    if (card) {
+      await pool.query(
+        `UPDATE bank_account SET "creditLimitCents" = $1 WHERE id = $2`,
+        [DEFAULT_CARD_LIMIT_CENTS, card.id]
+      )
+      return
+    }
   }
   if (kind !== 'credit' && existing.some((account) => account.type === kind)) return
-  await db.insert(bankAccount).values({
+  const inserted = await db.insert(bankAccount).values({
     userId,
     name: defaultAccountName(kind, {
       name: member[0]?.name,
@@ -187,5 +196,12 @@ export async function provisionApprovedProduct(userId: string, productId: string
     type: kind,
     accountNumber: kind === 'checking' ? SHARED_CHECKING_NUMBER : randomAccountNumber(),
     balanceCents: 0,
-  })
+    creditLimitCents: kind === 'credit' ? DEFAULT_CARD_LIMIT_CENTS : 0,
+  }).returning()
+  if (kind === 'credit' && inserted[0]) {
+    await pool.query(
+      `UPDATE bank_account SET "creditLimitCents" = $1, "balanceCents" = 0 WHERE id = $2`,
+      [DEFAULT_CARD_LIMIT_CENTS, inserted[0].id]
+    )
+  }
 }
