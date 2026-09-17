@@ -195,7 +195,6 @@ export default async function DashboardPage() {
     email: session.user.email,
   }).catch(() => undefined)
 
-  // Keep existing credit accounts' accountNumber = plastic PAN (Dawna + future)
   for (const row of owned.filter((a) => a.type === 'credit')) {
     const product = resolveCreditProduct(row.name, ctx.selectedProduct, [
       ...(ctx.extraProducts || []),
@@ -245,6 +244,7 @@ export default async function DashboardPage() {
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const debitVisa = issueVisaCard(session.user.id)
   const addOptions = productsMemberCanAdd(refreshedCtx)
+  const kycStatus = profile.kyc?.status ?? null
 
   const creditMeta = new Map(
     creditAccounts.map((card) => {
@@ -334,6 +334,7 @@ export default async function DashboardPage() {
                 cardCvv={issued.cvv}
                 network={issued.network}
                 productName={meta?.product?.name || card.name}
+                kycStatus={kycStatus}
               />
             </div>
           )
@@ -347,7 +348,7 @@ export default async function DashboardPage() {
               cardNumber={debitVisa.formatted}
               cardExp={debitVisa.exp}
               cardCvv={debitVisa.cvv}
-              kycStatus={profile.kyc?.status ?? null}
+              kycStatus={kycStatus}
             />
           </div>
         )}

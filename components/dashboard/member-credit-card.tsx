@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Eye, EyeOff, Wifi } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { CreditCard, Eye, EyeOff, Lock, ShieldCheck, Wifi } from 'lucide-react'
+import { toast } from 'sonner'
 import { BANK_NAME, BANK_SHORT_NAME } from '@/lib/bank-constants'
 
 const DESIGNS = [
@@ -120,6 +122,7 @@ export function MemberCreditCard({
   cardCvv,
   network,
   productName,
+  kycStatus,
 }: {
   memberName: string
   cardNumber: string
@@ -127,11 +130,34 @@ export function MemberCreditCard({
   cardCvv: string
   network: 'visa' | 'mastercard'
   productName?: string
+  kycStatus?: string | null
 }) {
+  const router = useRouter()
   const [selected, setSelected] = useState<(typeof DESIGNS)[number]['id']>('obsidian')
   const [revealed, setRevealed] = useState(false)
   const design = DESIGNS.find((d) => d.id === selected) ?? DESIGNS[0]
   const displayName = (memberName || 'MEMBER').toUpperCase()
+  const approved = kycStatus === 'approved'
+  const pending = kycStatus === 'pending'
+
+  function orderPhysical(label: string) {
+    if (approved) {
+      toast.success(`${label} requested`, {
+        description: `${design.name} card will ship after production.`,
+      })
+      return
+    }
+    if (pending) {
+      toast.message('Verification under review', {
+        description: 'Finish identity verification before a physical card can ship.',
+      })
+    } else {
+      toast.error('Verification required', {
+        description: 'Complete KYC in Settings to order a physical card.',
+      })
+    }
+    router.push('/dashboard/settings')
+  }
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -143,6 +169,22 @@ export function MemberCreditCard({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{BANK_NAME}</p>
         </div>
+        {approved ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            <ShieldCheck className="size-3.5" />
+            Verified
+          </span>
+        ) : pending ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700">
+            <Lock className="size-3.5" />
+            Verification pending
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            <Lock className="size-3.5" />
+            KYC required for physical card
+          </span>
+        )}
       </div>
 
       <div className="mt-5 flex justify-center">
@@ -197,6 +239,24 @@ export function MemberCreditCard({
             <p className="mt-2 text-sm font-semibold text-foreground">{option.name}</p>
           </button>
         ))}
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+        <button
+          type="button"
+          onClick={() => orderPhysical('Physical card')}
+          className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          <CreditCard className="size-4" />
+          Order physical card
+        </button>
+        <button
+          type="button"
+          onClick={() => orderPhysical(design.name)}
+          className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground hover:bg-muted"
+        >
+          Order {design.name}
+        </button>
       </div>
     </section>
   )

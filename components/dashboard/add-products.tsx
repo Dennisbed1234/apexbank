@@ -24,7 +24,9 @@ export function AddProducts({
         return
       }
       setChosen(name)
-      toast.success(`${name} selected`)
+      toast.message('Application under review', {
+        description: `Your ${name} account is under review.`,
+      })
       router.refresh()
     } catch {
       toast.error('Could not submit that application.')
@@ -56,9 +58,6 @@ export function AddProducts({
           Expand your banking
         </p>
         <h2 className="mt-1 text-lg font-bold tracking-tight text-white">Products</h2>
-        <p className="mt-1 text-sm text-teal-50/70">
-          Add checking, savings, or retirement — an officer reviews each request.
-        </p>
 
         <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
           {options.map((option) => {
@@ -82,7 +81,7 @@ export function AddProducts({
 
         {chosen && (
           <p className="mt-4 text-sm text-teal-50/80">
-            {chosen} was submitted. An officer will review it before it appears on this dashboard.
+            Your {chosen} account is under review.
           </p>
         )}
       </div>
