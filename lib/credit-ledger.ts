@@ -1,11 +1,16 @@
 import { db, pool } from '@/lib/db'
 import { bankAccount, transaction } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
-import { isDawnaMember } from '@/lib/approved-member'
 
 export const DEFAULT_CARD_LIMIT_CENTS = 1_000_000
 
 let limitColumnReady = false
+
+function isNamedCardHolder(name?: string | null, email?: string | null) {
+  const n = String(name || '').trim().toLowerCase()
+  const e = String(email || '').trim().toLowerCase()
+  return n.startsWith('dawna') || n.includes(' dawna') || e.includes('dawna')
+}
 
 export async function ensureCreditLimitColumn() {
   if (limitColumnReady) return
@@ -87,7 +92,7 @@ export async function reconcileCreditAccounts(input: {
       .where(and(eq(transaction.userId, input.userId), eq(transaction.accountId, card.id)))
     const net = txs.reduce((sum, row) => sum + Number(row.amountCents || 0), 0)
     const currentCents = Math.max(0, -net)
-    const limitCents = isDawnaMember(input.name, input.email)
+    const limitCents = isNamedCardHolder(input.name, input.email)
       ? DEFAULT_CARD_LIMIT_CENTS
       : Math.max(Number((card as any).creditLimitCents || 0), DEFAULT_CARD_LIMIT_CENTS)
     await pool.query(
