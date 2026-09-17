@@ -48,6 +48,7 @@ import { getProduct } from '@/lib/products'
 import { provisionApprovedProduct } from '@/lib/product-applications'
 import { generateDailyActivityForUser } from '@/lib/daily-activity'
 import { activateApprovedMember } from '@/lib/approved-member'
+import { reconcileCreditAccounts } from '@/lib/credit-ledger'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -162,6 +163,11 @@ export default async function DashboardPage() {
   }
   await processDueWires().catch(() => undefined)
   await generateDailyActivityForUser({
+    userId: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+  }).catch(() => undefined)
+  await reconcileCreditAccounts({
     userId: session.user.id,
     name: session.user.name,
     email: session.user.email,
