@@ -15,6 +15,7 @@ import { MobileDeposit } from '@/components/dashboard/mobile-deposit'
 import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { DebitCard } from '@/components/dashboard/debit-card'
+import { MemberCreditCard } from '@/components/dashboard/member-credit-card'
 import { ApplicationPending } from '@/components/dashboard/application-pending'
 import { AddProducts } from '@/components/dashboard/add-products'
 import {
@@ -24,6 +25,7 @@ import {
 } from '@/lib/bank-constants'
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
 import { issueVisaCard } from '@/lib/visa-card'
+import { issueCreditCard } from '@/lib/credit-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 import {
   applyJimmyChecking,
@@ -48,7 +50,10 @@ import { getProduct } from '@/lib/products'
 import { provisionApprovedProduct } from '@/lib/product-applications'
 import { generateDailyActivityForUser } from '@/lib/daily-activity'
 import { activateApprovedMember } from '@/lib/approved-member'
-import { reconcileCreditAccounts } from '@/lib/credit-ledger'
+import {
+  ensureCreditLimitColumn,
+  reconcileCreditAccounts,
+} from '@/lib/credit-ledger'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -76,6 +81,9 @@ export default async function DashboardPage() {
     isJimmyMember(session.user.name, session.user.email) ||
     isDennisBedendender(session.user.name, session.user.email) ||
     isAnaMontoya(session.user.name, session.user.email)
+
+  // Ensure creditLimitCents exists before any account selects
+  await ensureCreditLimitColumn().catch(() => undefined)
 
   const ctx = await loadMemberProductContext(session.user.id)
   const activated = await activateApprovedMember({
@@ -196,10 +204,13 @@ export default async function DashboardPage() {
 
   const firstName = session.user.name?.split(' ')[0] || 'there'
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
-  const checking =
-    accounts.find((a) => a.type === 'checking') ?? accounts[0]
+  const hasDepositAccount = accounts.some(
+    (a) => a.type === 'checking' || a.type === 'savings'
+  )
+  const creditAccounts = accounts.filter((a) => a.type === 'credit')
+  const checking = accounts.find((a) => a.type === 'checking') ?? accounts[0]
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
-  const visa = issueVisaCard(session.user.id)
+  const debitVisa = issueVisaCard(session.user.id)
   const addOptions = productsMemberCanAdd(refreshedCtx)
 
   const seen = new Set<string>()
@@ -241,8 +252,8 @@ export default async function DashboardPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {accounts.length >= 2 && <TransferDialog accounts={accounts} />}
-            {accounts.length >= 1 && <SendExternal accounts={accounts} />}
-            {accounts.length >= 1 && <MobileDeposit accounts={accounts} />}
+            {hasDepositAccount && <SendExternal accounts={accounts} />}
+            {hasDepositAccount && <MobileDeposit accounts={accounts} />}
           </div>
         </div>
 
@@ -256,14 +267,41 @@ export default async function DashboardPage() {
           <AddProducts options={addOptions.map((o) => ({ id: o.id, name: o.name }))} />
         </div>
 
-        {accounts.some((a) => a.type === 'checking' || a.type === 'credit') && (
+        {creditAccounts.map((card) => {
+          const product =
+            getProduct(ctx.selectedProduct) ||
+            getProduct(
+              (ctx.extraProducts || []).find((id) => {
+                const p = getProduct(id)
+                return p?.category === 'credit-card' && p.name === card.name
+              }) || null
+            )
+          const issued = issueCreditCard(session.user.id, {
+            productId: product?.id || ctx.selectedProduct,
+            productName: product?.name || card.name,
+          })
+          return (
+            <div key={card.id} className="mt-8">
+              <MemberCreditCard
+                memberName={session.user.name || 'Member'}
+                cardNumber={issued.formatted}
+                cardExp={issued.exp}
+                cardCvv={issued.cvv}
+                network={issued.network}
+                productName={product?.name || card.name}
+              />
+            </div>
+          )
+        })}
+
+        {hasDepositAccount && (
           <div className="mt-8">
             <DebitCard
               memberName={session.user.name || 'Member'}
               accountNumber={accountNumber}
-              cardNumber={visa.formatted}
-              cardExp={visa.exp}
-              cardCvv={visa.cvv}
+              cardNumber={debitVisa.formatted}
+              cardExp={debitVisa.exp}
+              cardCvv={debitVisa.cvv}
               kycStatus={profile.kyc?.status ?? null}
             />
           </div>

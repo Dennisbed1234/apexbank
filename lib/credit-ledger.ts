@@ -1,8 +1,9 @@
 import { db, pool } from '@/lib/db'
 import { bankAccount, transaction } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
+import { DEFAULT_CARD_LIMIT_CENTS } from '@/lib/card-figures'
 
-export const DEFAULT_CARD_LIMIT_CENTS = 1_000_000
+export { DEFAULT_CARD_LIMIT_CENTS, cardFigures } from '@/lib/card-figures'
 
 let limitColumnReady = false
 
@@ -18,20 +19,6 @@ export async function ensureCreditLimitColumn() {
     `ALTER TABLE bank_account ADD COLUMN IF NOT EXISTS "creditLimitCents" bigint NOT NULL DEFAULT 0`
   )
   limitColumnReady = true
-}
-
-export function cardFigures(account: {
-  type: string
-  balanceCents: number
-  creditLimitCents?: number | null
-}) {
-  const limit =
-    account.type === 'credit'
-      ? Math.max(account.creditLimitCents || 0, DEFAULT_CARD_LIMIT_CENTS)
-      : 0
-  const current = account.type === 'credit' ? Math.max(0, account.balanceCents) : account.balanceCents
-  const available = account.type === 'credit' ? Math.max(0, limit - current) : account.balanceCents
-  return { limitCents: limit, currentCents: current, availableCents: available }
 }
 
 export async function postLedgerEntry(input: {

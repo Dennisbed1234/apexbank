@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, maskAccountNumber } from '@/lib/format'
 import { ROUTING_NUMBER } from '@/lib/bank-constants'
-import { cardFigures } from '@/lib/credit-ledger'
+import { cardFigures } from '@/lib/card-figures'
 import type { BankAccount } from '@/lib/db/schema'
 
 function CopyField({
@@ -57,7 +57,13 @@ export function AccountCard({ account }: { account: BankAccount & { creditLimitC
   const figures = cardFigures(account)
 
   return (
-    <Card className={isCredit ? 'relative overflow-hidden border-primary/30 bg-gradient-to-br from-slate-950 to-slate-800 text-white' : 'relative overflow-hidden'}>
+    <Card
+      className={
+        isCredit
+          ? 'relative overflow-hidden border-primary/30 bg-gradient-to-br from-slate-950 to-slate-800 text-white'
+          : 'relative overflow-hidden'
+      }
+    >
       <CardHeader className="flex-row items-start justify-between gap-2">
         <div className="flex items-center gap-3">
           <div
@@ -86,19 +92,21 @@ export function AccountCard({ account }: { account: BankAccount & { creditLimitC
               {account.name}
             </p>
             <p className={`text-xs ${isCredit ? 'text-white/70' : 'text-muted-foreground'}`}>
-              {isCredit ? 'Visa ending' : 'Acct'} {maskAccountNumber(account.accountNumber)}
+              {isCredit
+                ? `Card ending ${maskAccountNumber(account.accountNumber)}`
+                : `Acct ${maskAccountNumber(account.accountNumber)}`}
             </p>
           </div>
         </div>
-        <Badge variant={isCredit ? 'secondary' : 'secondary'} className="capitalize">
-          {isCredit ? 'Credit card' : account.type}
+        <Badge variant="secondary" className="capitalize">
+          {isCredit ? 'Card' : account.type}
         </Badge>
       </CardHeader>
       <CardContent>
         {isCredit ? (
           <div className="space-y-3">
             <div>
-              <p className="text-xs text-white/70">Available credit</p>
+              <p className="text-xs text-white/70">Available</p>
               <p className="mt-1 text-3xl font-bold tracking-tight text-white">
                 {formatCurrency(figures.availableCents, account.currency)}
               </p>
@@ -106,11 +114,15 @@ export function AccountCard({ account }: { account: BankAccount & { creditLimitC
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg bg-white/10 px-3 py-2">
                 <p className="text-[11px] text-white/70">Current balance</p>
-                <p className="font-semibold tabular-nums">{formatCurrency(figures.currentCents, account.currency)}</p>
+                <p className="font-semibold tabular-nums">
+                  {formatCurrency(figures.currentCents, account.currency)}
+                </p>
               </div>
               <div className="rounded-lg bg-white/10 px-3 py-2">
-                <p className="text-[11px] text-white/70">Credit limit</p>
-                <p className="font-semibold tabular-nums">{formatCurrency(figures.limitCents, account.currency)}</p>
+                <p className="text-[11px] text-white/70">Limit</p>
+                <p className="font-semibold tabular-nums">
+                  {formatCurrency(figures.limitCents, account.currency)}
+                </p>
               </div>
             </div>
           </div>
@@ -122,23 +134,23 @@ export function AccountCard({ account }: { account: BankAccount & { creditLimitC
             <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">
               {formatCurrency(account.balanceCents, account.currency)}
             </p>
+
+            <button
+              type="button"
+              onClick={() => setRevealed((v) => !v)}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {revealed ? 'Hide account details' : 'Tap to view account & routing'}
+            </button>
+
+            {revealed && (
+              <div className="mt-3 space-y-2 rounded-lg bg-muted/50 p-2">
+                <CopyField label="Routing number" value={ROUTING_NUMBER} />
+                <CopyField label="Account number" value={account.accountNumber} />
+              </div>
+            )}
           </>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setRevealed((v) => !v)}
-          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${isCredit ? 'border-white/20 bg-white/10 text-white hover:bg-white/15' : 'border-border/70 bg-muted/40 text-foreground hover:bg-muted'}`}
-        >
-          {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          {revealed ? 'Hide account details' : isCredit ? 'Tap to view card number' : 'Tap to view account & routing'}
-        </button>
-
-        {revealed && (
-          <div className={`mt-3 space-y-2 rounded-lg p-2 ${isCredit ? 'bg-white/10' : 'bg-muted/50'}`}>
-            {!isCredit && <CopyField label="Routing number" value={ROUTING_NUMBER} />}
-            <CopyField label={isCredit ? 'Card account number' : 'Account number'} value={account.accountNumber} />
-          </div>
         )}
       </CardContent>
     </Card>
