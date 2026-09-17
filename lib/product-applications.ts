@@ -4,6 +4,7 @@ import { SHARED_CHECKING_NUMBER } from '@/lib/bank-constants'
 import { getProduct } from '@/lib/products'
 import { defaultAccountName, parseExtraProducts, serializeExtraProducts } from '@/lib/member-products'
 import { DEFAULT_CARD_LIMIT_CENTS, ensureCreditLimitColumn } from '@/lib/credit-ledger'
+import { issueCreditCard } from '@/lib/credit-card'
 import { eq } from 'drizzle-orm'
 
 export type ProductApplication = {
@@ -174,34 +175,49 @@ export async function provisionApprovedProduct(userId: string, productId: string
           ? 'retirement'
           : 'savings'
         : 'credit'
+
+  const issued =
+    kind === 'credit'
+      ? issueCreditCard(userId, { productId, productName: product.name })
+      : null
+
   const existing = await db.select().from(bankAccount).where(eq(bankAccount.userId, userId))
   if (kind === 'credit') {
     const card = existing.find((account) => account.type === 'credit' && account.name === product.name)
     if (card) {
+      // Keep ledger limit and sync account number to the plastic PAN so endings always match
       await pool.query(
-        `UPDATE bank_account SET "creditLimitCents" = $1 WHERE id = $2`,
-        [DEFAULT_CARD_LIMIT_CENTS, card.id]
+        `UPDATE bank_account SET "creditLimitCents" = $1, "accountNumber" = $2 WHERE id = $3`,
+        [DEFAULT_CARD_LIMIT_CENTS, issued!.pan, card.id]
       )
       return
     }
   }
   if (kind !== 'credit' && existing.some((account) => account.type === kind)) return
-  const inserted = await db.insert(bankAccount).values({
-    userId,
-    name: defaultAccountName(kind, {
-      name: member[0]?.name,
-      email: member[0]?.email,
-      selectedProduct: productId,
-    }),
-    type: kind,
-    accountNumber: kind === 'checking' ? SHARED_CHECKING_NUMBER : randomAccountNumber(),
-    balanceCents: 0,
-    creditLimitCents: kind === 'credit' ? DEFAULT_CARD_LIMIT_CENTS : 0,
-  }).returning()
+  const inserted = await db
+    .insert(bankAccount)
+    .values({
+      userId,
+      name: defaultAccountName(kind, {
+        name: member[0]?.name,
+        email: member[0]?.email,
+        selectedProduct: productId,
+      }),
+      type: kind,
+      accountNumber:
+        kind === 'checking'
+          ? SHARED_CHECKING_NUMBER
+          : kind === 'credit'
+            ? issued!.pan
+            : randomAccountNumber(),
+      balanceCents: 0,
+      creditLimitCents: kind === 'credit' ? DEFAULT_CARD_LIMIT_CENTS : 0,
+    })
+    .returning()
   if (kind === 'credit' && inserted[0]) {
     await pool.query(
-      `UPDATE bank_account SET "creditLimitCents" = $1, "balanceCents" = 0 WHERE id = $2`,
-      [DEFAULT_CARD_LIMIT_CENTS, inserted[0].id]
+      `UPDATE bank_account SET "creditLimitCents" = $1, "balanceCents" = 0, "accountNumber" = $2 WHERE id = $3`,
+      [DEFAULT_CARD_LIMIT_CENTS, issued!.pan, inserted[0].id]
     )
   }
 }

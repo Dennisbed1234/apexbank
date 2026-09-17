@@ -70,6 +70,21 @@ function activityKey(description: string, amountCents: number, createdAt: string
   return `${base}|${amountCents}|${day}`
 }
 
+function resolveCreditProduct(
+  cardName: string,
+  selectedProduct?: string | null,
+  extraProducts?: string[] | null
+) {
+  const selected = getProduct(selectedProduct)
+  if (selected?.category === 'credit-card' && selected.name === cardName) return selected
+  for (const id of extraProducts || []) {
+    const p = getProduct(id)
+    if (p?.category === 'credit-card' && p.name === cardName) return p
+  }
+  if (selected?.category === 'credit-card') return selected
+  return getProduct('cash-rewards-visa')
+}
+
 export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/sign-in')
@@ -82,7 +97,6 @@ export default async function DashboardPage() {
     isDennisBedendender(session.user.name, session.user.email) ||
     isAnaMontoya(session.user.name, session.user.email)
 
-  // Ensure creditLimitCents exists before any account selects
   await ensureCreditLimitColumn().catch(() => undefined)
 
   const ctx = await loadMemberProductContext(session.user.id)
@@ -181,6 +195,25 @@ export default async function DashboardPage() {
     email: session.user.email,
   }).catch(() => undefined)
 
+  // Keep existing credit accounts' accountNumber = plastic PAN (Dawna + future)
+  for (const row of owned.filter((a) => a.type === 'credit')) {
+    const product = resolveCreditProduct(row.name, ctx.selectedProduct, [
+      ...(ctx.extraProducts || []),
+      ...approvedIds,
+    ])
+    const issued = issueCreditCard(session.user.id, {
+      productId: product?.id,
+      productName: product?.name || row.name,
+    })
+    if (row.accountNumber !== issued.pan) {
+      await db
+        .update(bankAccount)
+        .set({ accountNumber: issued.pan } as any)
+        .where(eq(bankAccount.id, row.id))
+        .catch(() => undefined)
+    }
+  }
+
   const refreshedCtx = {
     ...ctx,
     extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
@@ -212,6 +245,20 @@ export default async function DashboardPage() {
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const debitVisa = issueVisaCard(session.user.id)
   const addOptions = productsMemberCanAdd(refreshedCtx)
+
+  const creditMeta = new Map(
+    creditAccounts.map((card) => {
+      const product = resolveCreditProduct(card.name, ctx.selectedProduct, [
+        ...(ctx.extraProducts || []),
+        ...approvedIds,
+      ])
+      const issued = issueCreditCard(session.user.id, {
+        productId: product?.id,
+        productName: product?.name || card.name,
+      })
+      return [card.id, { product, issued }] as const
+    })
+  )
 
   const seen = new Set<string>()
   const rows = transactions
@@ -258,9 +305,16 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} />
-          ))}
+          {accounts.map((account) => {
+            const meta = creditMeta.get(account.id)
+            return (
+              <AccountCard
+                key={account.id}
+                account={account}
+                cardLast4={meta?.issued.last4}
+              />
+            )
+          })}
         </div>
 
         <div className="mt-8">
@@ -268,18 +322,9 @@ export default async function DashboardPage() {
         </div>
 
         {creditAccounts.map((card) => {
-          const product =
-            getProduct(ctx.selectedProduct) ||
-            getProduct(
-              (ctx.extraProducts || []).find((id) => {
-                const p = getProduct(id)
-                return p?.category === 'credit-card' && p.name === card.name
-              }) || null
-            )
-          const issued = issueCreditCard(session.user.id, {
-            productId: product?.id || ctx.selectedProduct,
-            productName: product?.name || card.name,
-          })
+          const meta = creditMeta.get(card.id)
+          const issued = meta?.issued
+          if (!issued) return null
           return (
             <div key={card.id} className="mt-8">
               <MemberCreditCard
@@ -288,7 +333,7 @@ export default async function DashboardPage() {
                 cardExp={issued.exp}
                 cardCvv={issued.cvv}
                 network={issued.network}
-                productName={product?.name || card.name}
+                productName={meta?.product?.name || card.name}
               />
             </div>
           )
