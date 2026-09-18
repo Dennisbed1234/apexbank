@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Check, Copy, CreditCard, Eye, EyeOff, Landmark, PiggyBank, Trees, Wifi } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -52,10 +53,16 @@ function CopyField({
 export function AccountCard({
   account,
   cardLast4,
+  showCardPageLinks = false,
+  showDebitPageLink = false,
 }: {
   account: BankAccount & { creditLimitCents?: number }
   /** When set (credit cards), must match the plastic card last 4 */
   cardLast4?: string
+  /** Small buttons under credit tile → /dashboard/credit-card */
+  showCardPageLinks?: boolean
+  /** Also show Debit card shortcut when member has checking/savings */
+  showDebitPageLink?: boolean
 }) {
   const [revealed, setRevealed] = useState(false)
   const isSavings = account.type === 'savings'
@@ -162,6 +169,27 @@ export function AccountCard({
                 </p>
               </div>
             </div>
+
+            {showCardPageLinks && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Link
+                  href={`/dashboard/credit-card?accountId=${account.id}`}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white/15 px-3 text-xs font-semibold text-white ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25"
+                >
+                  <CreditCard className="size-3.5" />
+                  Credit card
+                </Link>
+                {showDebitPageLink && (
+                  <Link
+                    href="/dashboard/cards"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full bg-black/20 px-3 text-xs font-semibold text-emerald-50 ring-1 ring-white/15 backdrop-blur-sm hover:bg-black/30"
+                  >
+                    <CreditCard className="size-3.5" />
+                    Debit card
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <>
