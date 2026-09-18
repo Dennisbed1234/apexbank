@@ -6,7 +6,6 @@ import {
   listOutboundPayments,
   processDueWires,
 } from '@/app/actions/outbound'
-import { getProfileSettings } from '@/app/actions/settings'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { AccountCard } from '@/components/dashboard/account-card'
 import { TransferDialog } from '@/components/dashboard/transfer-dialog'
@@ -240,10 +239,6 @@ export default async function DashboardPage() {
     }
   }
 
-  const depositAccountIds = new Set(
-    accounts.filter((a) => a.type !== 'credit').map((a) => a.id)
-  )
-
   const firstName = session.user.name?.split(' ')[0] || 'there'
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
   const hasDepositAccount = accounts.some(
@@ -251,8 +246,16 @@ export default async function DashboardPage() {
   )
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
   const hasCredit = creditAccounts.length > 0
+  const hasMultipleAccounts = accounts.length > 1
+  /** Credit-only members see card purchases on the main dashboard */
+  const creditOnly = hasCredit && !hasDepositAccount && accounts.every((a) => a.type === 'credit')
   const ownedKinds = accounts.map((a) => a.type)
   const addOptions = productsMemberCanAdd(refreshedCtx, ownedKinds)
+
+  const depositAccountIds = new Set(
+    accounts.filter((a) => a.type !== 'credit').map((a) => a.id)
+  )
+  const creditAccountIds = new Set(creditAccounts.map((a) => a.id))
 
   const creditMeta = new Map(
     creditAccounts.map((card) => {
@@ -269,27 +272,37 @@ export default async function DashboardPage() {
   )
 
   const seen = new Set<string>()
-  const depositRows = transactions
-    .filter((t) => depositAccountIds.has(t.accountId))
-    .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
-    .map((t) => ({
-      id: t.id,
-      accountId: t.accountId,
-      amountCents: t.amountCents,
-      type: t.type,
-      description: t.description,
-      category: t.category,
-      counterparty: t.counterparty,
-      createdAt:
-        t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
-      accountName: accountNameById.get(t.accountId) ?? 'Account',
-    }))
-    .filter((t) => {
-      const key = activityKey(t.description, t.amountCents, t.createdAt)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+  function mapAndDedupe(
+    list: typeof transactions,
+    allowIds: Set<number>
+  ) {
+    return list
+      .filter((t) => allowIds.has(t.accountId))
+      .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
+      .map((t) => ({
+        id: t.id,
+        accountId: t.accountId,
+        amountCents: t.amountCents,
+        type: t.type,
+        description: t.description,
+        category: t.category,
+        counterparty: t.counterparty,
+        createdAt:
+          t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
+        accountName: accountNameById.get(t.accountId) ?? 'Account',
+      }))
+      .filter((t) => {
+        const key = activityKey(t.description, t.amountCents, t.createdAt)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }
+
+  // Multi-product: deposit activity only. Credit-only: card activity on dashboard.
+  const activityRows = creditOnly
+    ? mapAndDedupe(transactions, creditAccountIds)
+    : mapAndDedupe(transactions, depositAccountIds)
 
   return (
     <div className="min-h-svh bg-background">
@@ -321,14 +334,14 @@ export default async function DashboardPage() {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {accounts.map((account) => {
             const meta = creditMeta.get(account.id)
-            const isCredit = account.type === 'credit'
             return (
               <AccountCard
                 key={account.id}
                 account={account}
                 cardLast4={meta?.issued.last4}
-                showCardPageLinks={isCredit}
-                showDebitPageLink={isCredit && hasDepositAccount}
+                showCreditShortcuts={
+                  account.type === 'credit' && hasMultipleAccounts
+                }
               />
             )
           })}
@@ -345,14 +358,17 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-8">
-          <p className="mb-3 text-sm font-semibold text-foreground">Account activity</p>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Checking, savings, and other deposit accounts.
-            {hasCredit
-              ? ' Use the buttons on your credit tile or the menu for card details and pay balance.'
-              : ''}
+          <p className="mb-3 text-sm font-semibold text-foreground">
+            {creditOnly ? 'Card activity' : 'Account activity'}
           </p>
-          <TransactionsList transactions={depositRows} />
+          <p className="mb-3 text-xs text-muted-foreground">
+            {creditOnly
+              ? 'Purchases and payments on your credit card.'
+              : hasCredit
+                ? 'Checking and savings activity. Card purchases are under View activities on your credit tile.'
+                : 'Checking, savings, and other deposit accounts.'}
+          </p>
+          <TransactionsList transactions={activityRows} />
         </div>
       </main>
     </div>
