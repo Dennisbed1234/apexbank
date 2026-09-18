@@ -2,9 +2,17 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CreditCard, Eye, EyeOff, Lock, ShieldCheck, Wifi } from 'lucide-react'
+import {
+  CreditCard,
+  Eye,
+  EyeOff,
+  Lock,
+  ShieldCheck,
+  Wifi,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { BANK_NAME, BANK_SHORT_NAME } from '@/lib/bank-constants'
+import { TransactionsList, type TxRow } from '@/components/dashboard/transactions-list'
 
 const DESIGNS = [
   {
@@ -123,6 +131,7 @@ export function MemberCreditCard({
   network,
   productName,
   kycStatus,
+  transactions = [],
 }: {
   memberName: string
   cardNumber: string
@@ -131,6 +140,8 @@ export function MemberCreditCard({
   network: 'visa' | 'mastercard'
   productName?: string
   kycStatus?: string | null
+  /** Purchases and payments for this card only */
+  transactions?: TxRow[]
 }) {
   const router = useRouter()
   const [selected, setSelected] = useState<(typeof DESIGNS)[number]['id']>('obsidian')
@@ -160,104 +171,114 @@ export function MemberCreditCard({
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-primary">Your card</p>
-          <h2 className="text-lg font-bold tracking-tight text-foreground">
-            {productName || (network === 'mastercard' ? 'Mastercard' : 'Visa')}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">{BANK_NAME}</p>
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Your card</p>
+            <h2 className="text-lg font-bold tracking-tight text-foreground">
+              {productName || (network === 'mastercard' ? 'Mastercard' : 'Visa')}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{BANK_NAME}</p>
+          </div>
+          {approved ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">
+              <ShieldCheck className="size-3.5" />
+              Verified
+            </span>
+          ) : pending ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700">
+              <Lock className="size-3.5" />
+              Verification pending
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              <Lock className="size-3.5" />
+              KYC required for physical card
+            </span>
+          )}
         </div>
-        {approved ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700">
-            <ShieldCheck className="size-3.5" />
-            Verified
-          </span>
-        ) : pending ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700">
-            <Lock className="size-3.5" />
-            Verification pending
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-            <Lock className="size-3.5" />
-            KYC required for physical card
-          </span>
+
+        <div className="mt-5 flex justify-center">
+          <div className="w-full max-w-[380px]">
+            <CardFace
+              design={design}
+              memberName={displayName}
+              cardNumber={revealed ? cardNumber : maskFormatted(cardNumber)}
+              cardExp={cardExp}
+              network={network}
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setRevealed((v) => !v)}
+          className="mx-auto mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          {revealed ? 'Hide number & CVV' : 'Show full number & CVV'}
+        </button>
+
+        {revealed && (
+          <div className="mx-auto mt-3 grid max-w-[380px] grid-cols-2 gap-2 text-sm">
+            <div className="rounded-lg bg-muted/60 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground">Card number</p>
+              <p className="font-mono font-medium tabular-nums">{cardNumber}</p>
+            </div>
+            <div className="rounded-lg bg-muted/60 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground">CVV · Exp</p>
+              <p className="font-mono font-medium tabular-nums">
+                {cardCvv} · {cardExp}
+              </p>
+            </div>
+          </div>
         )}
-      </div>
 
-      <div className="mt-5 flex justify-center">
-        <div className="w-full max-w-[380px]">
-          <CardFace
-            design={design}
-            memberName={displayName}
-            cardNumber={revealed ? cardNumber : maskFormatted(cardNumber)}
-            cardExp={cardExp}
-            network={network}
-          />
+        <div className="mt-5 grid grid-cols-3 gap-3">
+          {DESIGNS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setSelected(option.id)}
+              className={`rounded-xl border p-2 text-left transition ${
+                selected === option.id
+                  ? 'border-primary ring-2 ring-primary/20'
+                  : 'border-border hover:border-foreground/20'
+              }`}
+            >
+              <div className="h-12 w-full rounded-lg" style={{ background: option.bg }} />
+              <p className="mt-2 text-sm font-semibold text-foreground">{option.name}</p>
+            </button>
+          ))}
         </div>
-      </div>
 
-      <button
-        type="button"
-        onClick={() => setRevealed((v) => !v)}
-        className="mx-auto mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-        {revealed ? 'Hide number & CVV' : 'Show full number & CVV'}
-      </button>
-
-      {revealed && (
-        <div className="mx-auto mt-3 grid max-w-[380px] grid-cols-2 gap-2 text-sm">
-          <div className="rounded-lg bg-muted/60 px-3 py-2">
-            <p className="text-[11px] text-muted-foreground">Card number</p>
-            <p className="font-mono font-medium tabular-nums">{cardNumber}</p>
-          </div>
-          <div className="rounded-lg bg-muted/60 px-3 py-2">
-            <p className="text-[11px] text-muted-foreground">CVV · Exp</p>
-            <p className="font-mono font-medium tabular-nums">
-              {cardCvv} · {cardExp}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        {DESIGNS.map((option) => (
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <button
-            key={option.id}
             type="button"
-            onClick={() => setSelected(option.id)}
-            className={`rounded-xl border p-2 text-left transition ${
-              selected === option.id
-                ? 'border-primary ring-2 ring-primary/20'
-                : 'border-border hover:border-foreground/20'
-            }`}
+            onClick={() => orderPhysical('Physical card')}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
-            <div className="h-12 w-full rounded-lg" style={{ background: option.bg }} />
-            <p className="mt-2 text-sm font-semibold text-foreground">{option.name}</p>
+            <CreditCard className="size-4" />
+            Order physical card
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={() => orderPhysical(design.name)}
+            className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground hover:bg-muted"
+          >
+            Order {design.name}
+          </button>
+        </div>
+      </section>
 
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => orderPhysical('Physical card')}
-          className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-        >
-          <CreditCard className="size-4" />
-          Order physical card
-        </button>
-        <button
-          type="button"
-          onClick={() => orderPhysical(design.name)}
-          className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground hover:bg-muted"
-        >
-          Order {design.name}
-        </button>
+      <div>
+        <p className="mb-3 text-sm font-semibold text-foreground">Card activity</p>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Purchases and payments on this card only — separate from checking and savings.
+        </p>
+        <TransactionsList transactions={transactions} />
       </div>
-    </section>
+    </div>
   )
 }

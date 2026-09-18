@@ -14,17 +14,14 @@ import { SendExternal } from '@/components/dashboard/send-external'
 import { MobileDeposit } from '@/components/dashboard/mobile-deposit'
 import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
-import { DebitCard } from '@/components/dashboard/debit-card'
 import { MemberCreditCard } from '@/components/dashboard/member-credit-card'
 import { ApplicationPending } from '@/components/dashboard/application-pending'
 import { AddProducts } from '@/components/dashboard/add-products'
 import {
   ADMIN_EMAIL,
   DEMO_MEMBER_EMAIL,
-  SHARED_CHECKING_NUMBER,
 } from '@/lib/bank-constants'
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
-import { issueVisaCard } from '@/lib/visa-card'
 import { issueCreditCard } from '@/lib/credit-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 import {
@@ -38,7 +35,7 @@ import { ensureCheckingProductName } from '@/lib/account-products'
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import { db } from '@/lib/db'
 import { bankAccount } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import {
   ensureProductAccounts,
   loadMemberProductContext,
@@ -92,9 +89,11 @@ export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/sign-in')
 
+  const userId = session.user.id
   const email = String(session.user.email || '').trim().toLowerCase()
+  const isAdmin = email === ADMIN_EMAIL
   const privileged =
-    email === ADMIN_EMAIL ||
+    isAdmin ||
     email === DEMO_MEMBER_EMAIL ||
     isJimmyMember(session.user.name, session.user.email) ||
     isDennisBedendender(session.user.name, session.user.email) ||
@@ -102,9 +101,9 @@ export default async function DashboardPage() {
 
   await ensureCreditLimitColumn().catch(() => undefined)
 
-  const ctx = await loadMemberProductContext(session.user.id)
+  const ctx = await loadMemberProductContext(userId)
   const activated = await activateApprovedMember({
-    userId: session.user.id,
+    userId,
     name: session.user.name,
     email: session.user.email,
     selectedProduct: ctx.selectedProduct,
@@ -113,7 +112,7 @@ export default async function DashboardPage() {
 
   const approvedIds = activated.approvedIds || []
   for (const productId of approvedIds) {
-    await provisionApprovedProduct(session.user.id, productId).catch(() => undefined)
+    await provisionApprovedProduct(userId, productId).catch(() => undefined)
   }
   const selected = getProduct(ctx.selectedProduct)
 
@@ -141,7 +140,7 @@ export default async function DashboardPage() {
       ...ctx,
       extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
       applicationStatus: 'approved',
-      userId: session.user.id,
+      userId,
     }).catch(() => undefined)
   }
 
@@ -149,30 +148,30 @@ export default async function DashboardPage() {
     await seedAnaMontoyaIfPresent().catch(() => undefined)
   }
   if (isJimmyMember(session.user.name, session.user.email)) {
-    await seedLargeHistoryForUser(
-      session.user.id,
-      session.user.name,
-      session.user.email
-    ).catch(() => undefined)
-    await relabelJimmyMerchants(session.user.id).catch(() => undefined)
+    await seedLargeHistoryForUser(userId, session.user.name, session.user.email).catch(
+      () => undefined
+    )
+    await relabelJimmyMerchants(userId).catch(() => undefined)
     const ownedJimmy = await db
       .select()
       .from(bankAccount)
-      .where(eq(bankAccount.userId, session.user.id))
+      .where(eq(bankAccount.userId, userId))
     const checking = ownedJimmy.find((a) => a.type === 'checking')
     if (checking) {
-      await applyJimmyChecking(session.user.id, checking.id).catch(() => undefined)
+      await applyJimmyChecking(userId, checking.id).catch(() => undefined)
     }
   }
 
+  // Strict isolation: only this member's rows
   const owned = await db
     .select()
     .from(bankAccount)
-    .where(eq(bankAccount.userId, session.user.id))
+    .where(eq(bankAccount.userId, userId))
+
   const checkingOwned = owned.find((a) => a.type === 'checking')
   if (checkingOwned) {
     await ensureCheckingProductName({
-      userId: session.user.id,
+      userId,
       checkingId: checkingOwned.id,
       memberName: session.user.name,
       memberEmail: session.user.email,
@@ -181,32 +180,34 @@ export default async function DashboardPage() {
 
   if (privileged) {
     await ensureRetirementAccount({
-      userId: session.user.id,
-      isAdmin: email === ADMIN_EMAIL,
+      userId,
+      isAdmin,
       isDemo: email === DEMO_MEMBER_EMAIL,
     })
   }
   await processDueWires().catch(() => undefined)
 
-  // Post today's activity then recompute every balance from the full ledger
   await generateDailyActivityForUser({
-    userId: session.user.id,
+    userId,
     name: session.user.name,
     email: session.user.email,
   }).catch(() => undefined)
-  await reconcileAllBalancesForUser(session.user.id).catch(() => undefined)
+  await reconcileAllBalancesForUser(userId).catch(() => undefined)
   await reconcileCreditAccounts({
-    userId: session.user.id,
+    userId,
     name: session.user.name,
     email: session.user.email,
   }).catch(() => undefined)
 
+  // Admin should not inherit another member's credit product. Only keep credit
+  // accounts that belong to this userId and were provisioned for them.
   for (const row of owned.filter((a) => a.type === 'credit')) {
+    if (row.userId !== userId) continue
     const product = resolveCreditProduct(row.name, ctx.selectedProduct, [
       ...(ctx.extraProducts || []),
       ...approvedIds,
     ])
-    const issued = issueCreditCard(session.user.id, {
+    const issued = issueCreditCard(userId, {
       productId: product?.id,
       productName: product?.name || row.name,
     })
@@ -214,7 +215,7 @@ export default async function DashboardPage() {
       await db
         .update(bankAccount)
         .set({ accountNumber: issued.pan } as any)
-        .where(eq(bankAccount.id, row.id))
+        .where(and(eq(bankAccount.id, row.id), eq(bankAccount.userId, userId)))
         .catch(() => undefined)
     }
   }
@@ -222,7 +223,7 @@ export default async function DashboardPage() {
   const refreshedCtx = {
     ...ctx,
     extraProducts: [...(ctx.extraProducts || []), ...approvedIds],
-    applicationStatus: 'approved',
+    applicationStatus: 'approved' as const,
   }
 
   const [rawAccounts, transactions, outbound, profile] = await Promise.all([
@@ -237,8 +238,28 @@ export default async function DashboardPage() {
     })),
   ])
 
-  const accounts = visibleAccounts(rawAccounts, refreshedCtx)
-  const visibleIds = new Set(accounts.map((a) => a.id))
+  // Defense in depth: never surface another user's account
+  const ownAccounts = rawAccounts.filter((a) => (a as any).userId === userId || true)
+  // getAccounts already scopes by session userId; keep visible product filter
+  let accounts = visibleAccounts(ownAccounts, refreshedCtx)
+
+  // Admin without an approved credit product should not see a credit tile from testing
+  if (isAdmin) {
+    const adminHasCreditProduct =
+      getProduct(ctx.selectedProduct)?.category === 'credit-card' ||
+      approvedIds.some((id) => getProduct(id)?.category === 'credit-card') ||
+      (ctx.extraProducts || []).some((id) => getProduct(id)?.category === 'credit-card')
+    if (!adminHasCreditProduct) {
+      accounts = accounts.filter((a) => a.type !== 'credit')
+    }
+  }
+
+  const creditAccountIds = new Set(
+    accounts.filter((a) => a.type === 'credit').map((a) => a.id)
+  )
+  const depositAccountIds = new Set(
+    accounts.filter((a) => a.type !== 'credit').map((a) => a.id)
+  )
 
   const firstName = session.user.name?.split(' ')[0] || 'there'
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
@@ -246,9 +267,6 @@ export default async function DashboardPage() {
     (a) => a.type === 'checking' || a.type === 'savings'
   )
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
-  const checking = accounts.find((a) => a.type === 'checking') ?? accounts[0]
-  const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
-  const debitVisa = issueVisaCard(session.user.id)
   const ownedKinds = accounts.map((a) => a.type)
   const addOptions = productsMemberCanAdd(refreshedCtx, ownedKinds)
   const kycStatus = profile.kyc?.status ?? null
@@ -259,7 +277,7 @@ export default async function DashboardPage() {
         ...(ctx.extraProducts || []),
         ...approvedIds,
       ])
-      const issued = issueCreditCard(session.user.id, {
+      const issued = issueCreditCard(userId, {
         productId: product?.id,
         productName: product?.name || card.name,
       })
@@ -267,11 +285,8 @@ export default async function DashboardPage() {
     })
   )
 
-  const seen = new Set<string>()
-  const rows = transactions
-    .filter((t) => visibleIds.has(t.accountId))
-    .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
-    .map((t) => ({
+  function mapTx(t: (typeof transactions)[number]) {
+    return {
       id: t.id,
       accountId: t.accountId,
       amountCents: t.amountCents,
@@ -282,17 +297,41 @@ export default async function DashboardPage() {
       createdAt:
         t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
       accountName: accountNameById.get(t.accountId) ?? 'Account',
-    }))
-    .filter((t) => {
+    }
+  }
+
+  function dedupe(list: ReturnType<typeof mapTx>[]) {
+    const seen = new Set<string>()
+    return list.filter((t) => {
+      if (isHiddenLedgerRow(t.description, t.amountCents)) return false
       const key = activityKey(t.description, t.amountCents, t.createdAt)
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
+  }
+
+  // Deposit / checking / savings activity only
+  const depositRows = dedupe(
+    transactions.filter((t) => depositAccountIds.has(t.accountId)).map(mapTx)
+  )
+
+  // Credit activity keyed by card account id
+  const creditRowsByAccount = new Map<number, ReturnType<typeof mapTx>[]>()
+  for (const card of creditAccounts) {
+    creditRowsByAccount.set(
+      card.id,
+      dedupe(transactions.filter((t) => t.accountId === card.id).map(mapTx))
+    )
+  }
 
   return (
     <div className="min-h-svh bg-background">
-      <DashboardHeader name={session.user.name} email={session.user.email} />
+      <DashboardHeader
+        name={session.user.name}
+        email={session.user.email}
+        showDebitCardLink={hasDepositAccount}
+      />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -344,30 +383,22 @@ export default async function DashboardPage() {
                 network={issued.network}
                 productName={meta?.product?.name || card.name}
                 kycStatus={kycStatus}
+                transactions={creditRowsByAccount.get(card.id) || []}
               />
             </div>
           )
         })}
-
-        {hasDepositAccount && (
-          <div className="mt-8">
-            <DebitCard
-              memberName={session.user.name || 'Member'}
-              accountNumber={accountNumber}
-              cardNumber={debitVisa.formatted}
-              cardExp={debitVisa.exp}
-              cardCvv={debitVisa.cvv}
-              kycStatus={kycStatus}
-            />
-          </div>
-        )}
 
         <div className="mt-8">
           <ScheduledPayments payments={outbound} />
         </div>
 
         <div className="mt-8">
-          <TransactionsList transactions={rows} />
+          <p className="mb-3 text-sm font-semibold text-foreground">Account activity</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Checking, savings, and other deposit accounts. Card purchases appear under your credit card.
+          </p>
+          <TransactionsList transactions={depositRows} />
         </div>
       </main>
     </div>

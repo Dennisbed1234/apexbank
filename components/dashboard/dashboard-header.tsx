@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, LogOut, Mail, Settings, Shield, User } from 'lucide-react'
+import { CreditCard, FileText, LogOut, Mail, Settings, Shield, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { emailMyStatement } from '@/app/actions/email-statement'
@@ -29,9 +29,12 @@ function buildMonthOptions(count = 12) {
 export function DashboardHeader({
   name,
   email,
+  showDebitCardLink = false,
 }: {
   name: string
   email: string
+  /** Show Debit card link when member has checking/savings */
+  showDebitCardLink?: boolean
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -194,6 +197,16 @@ export function DashboardHeader({
                 <Settings className="size-4" />
                 Settings
               </Link>
+              {showDebitCardLink && (
+                <Link
+                  href="/dashboard/cards"
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => setOpen(false)}
+                >
+                  <CreditCard className="size-4" />
+                  Debit card
+                </Link>
+              )}
               <label className="flex w-full flex-col gap-1 rounded-md px-2 py-1.5 text-sm">
                 <span className="text-muted-foreground">Statement month</span>
                 <select
