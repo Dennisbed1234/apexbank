@@ -7,12 +7,6 @@ export { DEFAULT_CARD_LIMIT_CENTS, cardFigures } from '@/lib/card-figures'
 
 let limitColumnReady = false
 
-function isNamedCardHolder(name?: string | null, email?: string | null) {
-  const n = String(name || '').trim().toLowerCase()
-  const e = String(email || '').trim().toLowerCase()
-  return n.startsWith('dawna') || n.includes(' dawna') || e.includes('dawna')
-}
-
 export async function ensureCreditLimitColumn() {
   if (limitColumnReady) return
   await pool.query(
@@ -79,9 +73,9 @@ export async function reconcileCreditAccounts(input: {
       .where(and(eq(transaction.userId, input.userId), eq(transaction.accountId, card.id)))
     const net = txs.reduce((sum, row) => sum + Number(row.amountCents || 0), 0)
     const currentCents = Math.max(0, -net)
-    const limitCents = isNamedCardHolder(input.name, input.email)
-      ? DEFAULT_CARD_LIMIT_CENTS
-      : Math.max(Number((card as any).creditLimitCents || 0), DEFAULT_CARD_LIMIT_CENTS)
+    // Keep admin-assigned limit; only fall back to default if never set
+    const stored = Number((card as any).creditLimitCents || 0)
+    const limitCents = stored > 0 ? stored : DEFAULT_CARD_LIMIT_CENTS
     await pool.query(
       `UPDATE bank_account SET "creditLimitCents" = $1, "balanceCents" = $2 WHERE id = $3 AND "userId" = $4`,
       [limitCents, currentCents, card.id, input.userId]

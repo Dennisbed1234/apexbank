@@ -7,9 +7,12 @@ export function cardFigures(account: {
   balanceCents: number
   creditLimitCents?: number | null
 }) {
+  const stored = Number(account.creditLimitCents || 0)
   const limit =
     account.type === 'credit'
-      ? Math.max(account.creditLimitCents || 0, DEFAULT_CARD_LIMIT_CENTS)
+      ? stored > 0
+        ? stored
+        : DEFAULT_CARD_LIMIT_CENTS
       : 0
   const current =
     account.type === 'credit' ? Math.max(0, account.balanceCents) : account.balanceCents
