@@ -34,13 +34,14 @@ export function parseMonthKey(monthKey: string): { since: Date; until: Date; lab
   const year = Number(m[1])
   const month = Number(m[2]) - 1
   if (!Number.isFinite(year) || month < 0 || month > 11) return null
-  const since = new Date(year, month, 1, 0, 0, 0, 0)
-  const until = new Date(year, month + 1, 1, 0, 0, 0, 0)
+  // Noon UTC on the 1st avoids CT edge cases on the statement period line
+  const since = new Date(Date.UTC(year, month, 1, 12, 0, 0))
+  const until = new Date(Date.UTC(year, month + 1, 1, 12, 0, 0))
   const label = new Intl.DateTimeFormat('en-US', {
     month: 'long',
     year: 'numeric',
     timeZone: BANK_TIMEZONE,
-  }).format(new Date(year, month, 15))
+  }).format(new Date(Date.UTC(year, month, 15, 12, 0, 0)))
   return { since, until, label }
 }
 
@@ -141,6 +142,11 @@ function statementProductLabel(input: {
   return checkingProductName(input.memberName, input.memberEmail, input.selectedProduct)
 }
 
+/** Credit balance owed from signed ledger amounts (purchases negative). */
+function creditOwedFromNet(netAmountCents: number) {
+  return Math.max(0, -netAmountCents)
+}
+
 export async function buildMemberStatementPdf(input: {
   userId: string
   memberName: string
@@ -183,7 +189,6 @@ export async function buildMemberStatementPdf(input: {
     memberEmail: input.memberEmail,
   })
 
-  // Credit figures: always honor $10,000 limit for card accounts
   const figures = focus
     ? cardFigures({
         type: focus.type,
@@ -208,7 +213,9 @@ export async function buildMemberStatementPdf(input: {
     months = 1
     const monthName = single.label.replace(/\s+\d{4}$/, '')
     statementTitle = `${BANK_NAME} ${productName} ${monthName} Statement`
-    periodLabel = `${formatUsDate(since)} through ${formatUsDate(new Date(until.getTime() - 1))}`
+    // Inclusive calendar month in CT
+    const lastDay = new Date(until.getTime() - 24 * 60 * 60 * 1000)
+    periodLabel = `${formatUsDate(since)} through ${formatUsDate(lastDay)}`
     filename = `${safeFileName(statementTitle)}.pdf`
   } else {
     const window = statementWindow(input.months)
@@ -261,25 +268,31 @@ export async function buildMemberStatementPdf(input: {
 
   const allVisible = raw.filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
 
+  const beforePeriod = allVisible.filter((t) => {
+    const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
+    return d < since
+  })
   const inPeriod = allVisible.filter((t) => {
     const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
     return d >= since && d < until
   })
 
-  // For credit: balanceCents = current balance owed; running balance tracks that
-  const closingCents = isCredit
-    ? figures.currentCents
-    : focus?.balanceCents ?? 0
-  const afterPeriod = allVisible.filter((t) => {
-    const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
-    return d >= until
-  })
-  const netAfter = afterPeriod.reduce((s, t) => s + t.amountCents, 0)
+  const netBefore = beforePeriod.reduce((s, t) => s + t.amountCents, 0)
   const periodNet = inPeriod.reduce((s, t) => s + t.amountCents, 0)
-  // Credit purchases are negative amountCents; owed balance increases when amount is negative
+
+  // Deposit: balance = running sum of amounts
+  // Credit: balance owed = max(0, -running sum of amounts)
   const openingCents = isCredit
-    ? Math.max(0, closingCents - periodNet - netAfter)
-    : closingCents - periodNet - netAfter
+    ? creditOwedFromNet(netBefore)
+    : beforePeriod.reduce((s, t) => s + t.amountCents, 0)
+
+  // Closing for the statement period (end of selected month)
+  const closingFromLedger = isCredit
+    ? creditOwedFromNet(netBefore + periodNet)
+    : openingCents + periodNet
+
+  // Header "current balance" uses live card figure (reconciled)
+  const headerBalanceCents = isCredit ? figures.currentCents : focus?.balanceCents ?? 0
 
   const grouped = new Map<string, typeof inPeriod>()
   for (const t of inPeriod) {
@@ -292,7 +305,12 @@ export async function buildMemberStatementPdf(input: {
 
   let running = openingCents
   const catalog = single
-    ? [{ key: chicagoMonthKey(new Date(since.getFullYear(), since.getMonth(), 15)), label: single.label }]
+    ? [
+        {
+          key: chicagoMonthKey(new Date(since.getUTCFullYear(), since.getUTCMonth(), 15)),
+          label: single.label,
+        },
+      ]
     : monthCatalog(since, until)
 
   const monthSections: StatementMonth[] = catalog.map((month) => {
@@ -304,7 +322,7 @@ export async function buildMemberStatementPdf(input: {
 
     for (const t of rows) {
       if (isCredit) {
-        // Purchases (negative) increase balance owed; payments (positive) reduce it
+        // Purchases (negative amount) increase amount owed; payments (positive) reduce it
         running = Math.max(0, running - t.amountCents)
         if (t.amountCents < 0) debitsCents += t.amountCents
         else creditsCents += t.amountCents
@@ -318,7 +336,7 @@ export async function buildMemberStatementPdf(input: {
         date: formatUsDate(created),
         reference: String(t.id).padStart(8, '0'),
         description: t.description,
-        depositLabel: t.amountCents >= 0 ? formatCurrency(t.amountCents) : '',
+        depositLabel: t.amountCents >= 0 ? formatCurrency(Math.abs(t.amountCents)) : '',
         withdrawalLabel: t.amountCents < 0 ? formatCurrency(t.amountCents) : '',
         balanceLabel: formatCurrency(running),
       })
@@ -336,10 +354,25 @@ export async function buildMemberStatementPdf(input: {
     }
   })
 
-  const lastClose =
+  // Prefer ledger close for the period; if it drifted, still show live current in header
+  const periodCloseCents =
     monthSections.length > 0
-      ? monthSections[monthSections.length - 1].closingLabel
-      : formatCurrency(closingCents)
+      ? isCredit
+        ? closingFromLedger
+        : running
+      : openingCents
+
+  const lastClose = formatCurrency(
+    isCredit ? periodCloseCents : monthSections.length > 0 ? running : openingCents
+  )
+
+  // Align last month closing label with computed period close
+  if (monthSections.length > 0 && isCredit) {
+    monthSections[monthSections.length - 1] = {
+      ...monthSections[monthSections.length - 1],
+      closingLabel: formatCurrency(periodCloseCents),
+    }
+  }
 
   const statementAccounts = focus
     ? [
@@ -347,14 +380,15 @@ export async function buildMemberStatementPdf(input: {
           name: productName,
           type: focus.type,
           lastFour: lastFour(focus.accountNumber),
-          balanceLabel: isCredit
-            ? formatCurrency(figures.currentCents, focus.currency)
-            : formatCurrency(focus.balanceCents, focus.currency),
+          balanceLabel: formatCurrency(headerBalanceCents, focus.currency),
           creditLimitLabel: isCredit
             ? formatCurrency(figures.limitCents, focus.currency)
             : undefined,
           availableCreditLabel: isCredit
-            ? formatCurrency(figures.availableCents, focus.currency)
+            ? formatCurrency(
+                Math.max(0, figures.limitCents - headerBalanceCents),
+                focus.currency
+              )
             : undefined,
         },
       ]
@@ -374,13 +408,12 @@ export async function buildMemberStatementPdf(input: {
     generatedAt: formatStatementStamp(new Date()),
     totalInPeriod: inPeriod.length,
     periodOpeningLabel: formatCurrency(openingCents),
-    periodClosingLabel:
-      monthSections.length > 0
-        ? monthSections[monthSections.length - 1].closingLabel
-        : formatCurrency(openingCents),
+    periodClosingLabel: formatCurrency(periodCloseCents),
     lastMonthClosingLabel: lastClose,
     creditLimitLabel: isCredit ? formatCurrency(figures.limitCents) : undefined,
-    availableCreditLabel: isCredit ? formatCurrency(figures.availableCents) : undefined,
+    availableCreditLabel: isCredit
+      ? formatCurrency(Math.max(0, figures.limitCents - headerBalanceCents))
+      : undefined,
   })
 
   return {
