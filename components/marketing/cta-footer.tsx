@@ -30,17 +30,38 @@ export function CtaFooter() {
       </section>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex items-center gap-2">
-            <ApexLogo className="h-6 w-6 text-primary" />
-            <span className="font-bold text-foreground">{BANK_NAME}</span>
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:px-6">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <ApexLogo className="h-6 w-6 text-primary" />
+              <span className="font-bold text-foreground">{BANK_NAME}</span>
+            </div>
+            <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+              <Link href="/about" className="text-muted-foreground hover:text-foreground">
+                About
+              </Link>
+              <Link href="/legal#privacy" className="text-muted-foreground hover:text-foreground">
+                Privacy Policy
+              </Link>
+              <Link href="/legal#terms" className="text-muted-foreground hover:text-foreground">
+                Terms of Use
+              </Link>
+              <Link href="/legal#contact" className="text-muted-foreground hover:text-foreground">
+                Contact
+              </Link>
+              <Link href="/sign-in" className="text-muted-foreground hover:text-foreground">
+                Log in
+              </Link>
+            </nav>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {BANK_NAME}. Member FDIC. Equal Housing Lender.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} {BANK_NAME}
-          </p>
+          <div className="flex flex-col gap-2 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {BANK_NAME}. Member FDIC. Equal Housing Lender.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} {BANK_NAME}
+            </p>
+          </div>
         </div>
       </footer>
     </>
