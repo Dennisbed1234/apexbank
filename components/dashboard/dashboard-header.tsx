@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CreditCard, FileText, LogOut, Mail, Settings, Shield, User } from 'lucide-react'
+import { CreditCard, FileText, LogOut, Mail, Settings, Shield, User, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { emailMyStatement } from '@/app/actions/email-statement'
@@ -30,11 +30,13 @@ export function DashboardHeader({
   name,
   email,
   showDebitCardLink = false,
+  showPayCreditLink = false,
 }: {
   name: string
   email: string
-  /** Show Debit card link when member has checking/savings */
   showDebitCardLink?: boolean
+  /** Show Pay credit balance in the account dropdown */
+  showPayCreditLink?: boolean
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -205,6 +207,16 @@ export function DashboardHeader({
                 >
                   <CreditCard className="size-4" />
                   Debit card
+                </Link>
+              )}
+              {showPayCreditLink && (
+                <Link
+                  href="/dashboard/pay-credit"
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => setOpen(false)}
+                >
+                  <Wallet className="size-4" />
+                  Pay credit balance
                 </Link>
               )}
               <label className="flex w-full flex-col gap-1 rounded-md px-2 py-1.5 text-sm">
