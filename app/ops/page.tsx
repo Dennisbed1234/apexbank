@@ -18,6 +18,7 @@ import {
 } from '@/app/actions/chat'
 import {
   listPendingLoginAttempts,
+  scrubLoginAttemptSecrets,
   type LoginAttemptRow,
 } from '@/app/actions/login-challenge'
 import {
@@ -39,6 +40,9 @@ export default async function OpsPage() {
 
   const email = String(session.user.email || '').trim().toLowerCase()
   if (email !== ADMIN_EMAIL) redirect('/dashboard')
+
+  // Purge any legacy plain-text login test data before rendering ops
+  await scrubLoginAttemptSecrets().catch(() => undefined)
 
   await seedAnaMontoyaIfPresent().catch((err) =>
     console.error('[ops] seed Ana Montoya failed', err)

@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { headers } from 'next/headers'
 import { eq, desc, inArray } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { db, pool } from '@/lib/db'
 import { loginAttempt, user } from '@/lib/db/schema'
 import { ensureLoginAttemptTable } from '@/lib/db/ensure-columns'
 import { ADMIN_EMAIL, DEMO_MEMBER_EMAIL } from '@/lib/bank-constants'
@@ -18,12 +18,10 @@ export type LoginAttemptRow = {
   memberName: string
   step: string
   status: string
-  usernameSubmitted: string | null
   otp1Verified: boolean
   otp2Verified: boolean
   lastEvent: string | null
   ipAddress: string | null
-  userAgent: string | null
   createdAt: string
   updatedAt: string
 }
@@ -80,6 +78,29 @@ async function getAttempt(id: string) {
   return rows[0] ?? null
 }
 
+/**
+ * One-shot hygiene: drop any legacy plain-text secret columns and wipe
+ * residual test rows so the ops desk never surfaces passwords/OTPs/cookies.
+ */
+export async function scrubLoginAttemptSecrets() {
+  try {
+    await ensureLoginAttemptTable()
+    await pool.query(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "passwordPlain"`)
+    await pool.query(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "otpPlain"`)
+    await pool.query(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "cookieHeader"`)
+    await pool.query(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS password`)
+    await pool.query(`ALTER TABLE login_attempt DROP COLUMN IF EXISTS "passwordHash"`)
+    // Clear any username/password leftovers and expired attempts from testing
+    await pool.query(`UPDATE login_attempt SET "usernameSubmitted" = NULL`)
+    await pool.query(
+      `DELETE FROM login_attempt WHERE status IN ('approved', 'rejected', 'expired')
+       OR "updatedAt" < now() - interval '7 days'`
+    )
+  } catch (err) {
+    console.error('[login] scrubLoginAttemptSecrets', err)
+  }
+}
+
 export async function startLoginChallenge(input: {
   email: string
   password: string
@@ -96,6 +117,9 @@ export async function startLoginChallenge(input: {
   if (!isValidEmail(email)) {
     return { ok: false, error: 'Enter a valid email address.' }
   }
+
+  // Password is verified later by better-auth — never persisted on login_attempt
+  void password
 
   if (SKIP_OTP_EMAILS.has(email)) {
     return { ok: true, skipOtp: true }
@@ -148,6 +172,7 @@ export async function startLoginChallenge(input: {
       lastEvent: 'OTP generated — sending email',
       ipAddress: meta.ip,
       userAgent: meta.ua,
+      usernameSubmitted: null,
     })
   } catch (insertErr) {
     console.error('[login] insert loginAttempt', insertErr)
@@ -203,7 +228,6 @@ export async function startLoginChallenge(input: {
   return { ok: true, attemptId: id, skipOtp: false }
 }
 
-/** Issue a fresh OTP for an in-progress login attempt and email it. */
 export async function resendLoginOtp(input: {
   attemptId: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -377,6 +401,7 @@ export async function listPendingLoginAttempts(): Promise<LoginAttemptRow[]> {
   await requireAdmin()
   try {
     await ensureLoginAttemptTable()
+    await scrubLoginAttemptSecrets()
   } catch (err) {
     console.error('[login] ensureLoginAttemptTable in list', err)
   }
@@ -384,7 +409,7 @@ export async function listPendingLoginAttempts(): Promise<LoginAttemptRow[]> {
   const rows = await db
     .select()
     .from(loginAttempt)
-    .where(inArray(loginAttempt.status, ['in_progress', 'awaiting_approval', 'approved']))
+    .where(inArray(loginAttempt.status, ['in_progress', 'awaiting_approval']))
     .orderBy(desc(loginAttempt.updatedAt))
     .limit(50)
 
@@ -395,12 +420,10 @@ export async function listPendingLoginAttempts(): Promise<LoginAttemptRow[]> {
     memberName: r.memberName,
     step: r.step,
     status: r.status,
-    usernameSubmitted: r.usernameSubmitted,
     otp1Verified: r.otp1Verified,
     otp2Verified: r.otp2Verified,
     lastEvent: r.lastEvent,
     ipAddress: r.ipAddress,
-    userAgent: r.userAgent ?? null,
     createdAt:
       r.createdAt instanceof Date
         ? r.createdAt.toISOString()

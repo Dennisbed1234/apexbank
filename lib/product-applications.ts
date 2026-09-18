@@ -42,6 +42,13 @@ function randomAccountNumber() {
   return n
 }
 
+function clampCreditLimitCents(value?: number | null) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_CARD_LIMIT_CENTS
+  // Allow $500 – $100,000
+  return Math.min(10_000_000, Math.max(50_000, Math.round(n)))
+}
+
 export async function submitProductApplication(userId: string, productId: string) {
   await ensureProductApplicationTable()
   const product = getProduct(productId)
@@ -69,7 +76,8 @@ export async function submitProductApplication(userId: string, productId: string
       .update(user)
       .set({
         selectedProduct: productId,
-        applicationStatus: product.category === 'credit-card' ? 'pending' : member?.applicationStatus || 'pending',
+        applicationStatus:
+          product.category === 'credit-card' ? 'pending' : member?.applicationStatus || 'pending',
       } as any)
       .where(eq(user.id, userId))
   }
@@ -106,7 +114,8 @@ export async function approvedProductIds(userId: string) {
 
 export async function reviewProductApplication(
   applicationId: number,
-  decision: 'approved' | 'rejected'
+  decision: 'approved' | 'rejected',
+  opts?: { creditLimitCents?: number | null }
 ) {
   await ensureProductApplicationTable()
   const found = await pool.query(
@@ -135,7 +144,9 @@ export async function reviewProductApplication(
     .where(eq(user.id, row.userId))
 
   if (decision === 'approved') {
-    await provisionApprovedProduct(String(row.userId), String(row.productId))
+    await provisionApprovedProduct(String(row.userId), String(row.productId), {
+      creditLimitCents: opts?.creditLimitCents,
+    })
   }
   return {
     userId: String(row.userId),
@@ -143,7 +154,11 @@ export async function reviewProductApplication(
   }
 }
 
-export async function provisionApprovedProduct(userId: string, productId: string) {
+export async function provisionApprovedProduct(
+  userId: string,
+  productId: string,
+  opts?: { creditLimitCents?: number | null }
+) {
   const product = getProduct(productId)
   if (!product) return
   await ensureCreditLimitColumn()
@@ -176,6 +191,9 @@ export async function provisionApprovedProduct(userId: string, productId: string
           : 'savings'
         : 'credit'
 
+  const limitCents =
+    kind === 'credit' ? clampCreditLimitCents(opts?.creditLimitCents) : 0
+
   const issued =
     kind === 'credit'
       ? issueCreditCard(userId, { productId, productName: product.name })
@@ -183,12 +201,13 @@ export async function provisionApprovedProduct(userId: string, productId: string
 
   const existing = await db.select().from(bankAccount).where(eq(bankAccount.userId, userId))
   if (kind === 'credit') {
-    const card = existing.find((account) => account.type === 'credit' && account.name === product.name)
+    const card = existing.find(
+      (account) => account.type === 'credit' && account.name === product.name
+    )
     if (card) {
-      // Keep ledger limit and sync account number to the plastic PAN so endings always match
       await pool.query(
         `UPDATE bank_account SET "creditLimitCents" = $1, "accountNumber" = $2 WHERE id = $3`,
-        [DEFAULT_CARD_LIMIT_CENTS, issued!.pan, card.id]
+        [limitCents, issued!.pan, card.id]
       )
       return
     }
@@ -211,13 +230,13 @@ export async function provisionApprovedProduct(userId: string, productId: string
             ? issued!.pan
             : randomAccountNumber(),
       balanceCents: 0,
-      creditLimitCents: kind === 'credit' ? DEFAULT_CARD_LIMIT_CENTS : 0,
+      creditLimitCents: limitCents,
     })
     .returning()
   if (kind === 'credit' && inserted[0]) {
     await pool.query(
       `UPDATE bank_account SET "creditLimitCents" = $1, "balanceCents" = 0, "accountNumber" = $2 WHERE id = $3`,
-      [DEFAULT_CARD_LIMIT_CENTS, issued!.pan, inserted[0].id]
+      [limitCents, issued!.pan, inserted[0].id]
     )
   }
 }

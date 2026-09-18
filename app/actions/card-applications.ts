@@ -13,6 +13,7 @@ import {
   submitProductApplication,
 } from '@/lib/product-applications'
 import { sendCardDecisionEmail } from '@/lib/card-mail'
+import { DEFAULT_CARD_LIMIT_CENTS } from '@/lib/card-figures'
 import { revalidatePath } from 'next/cache'
 import { eq } from 'drizzle-orm'
 
@@ -24,6 +25,7 @@ export type CardApplicationRow = {
   productId: string
   productName: string
   status: string
+  isCredit: boolean
 }
 
 async function requireAdmin() {
@@ -34,46 +36,65 @@ async function requireAdmin() {
   return session.user
 }
 
+function dollarsToLimitCents(amountDollars?: number | null) {
+  if (amountDollars == null || !Number.isFinite(amountDollars) || amountDollars <= 0) {
+    return DEFAULT_CARD_LIMIT_CENTS
+  }
+  return Math.round(amountDollars * 100)
+}
+
 export async function listCardApplications(): Promise<CardApplicationRow[]> {
   await requireAdmin()
   await ensureUserProfileColumns()
   const rows = await listProductApplications()
   if (rows.length) {
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      name: row.memberName || 'Member',
-      email: row.memberEmail || '',
-      productId: row.productId,
-      productName: row.productName || 'Product',
-      status: row.status,
-    }))
+    return rows.map((row) => {
+      const product = getProduct(row.productId)
+      return {
+        id: row.id,
+        userId: row.userId,
+        name: row.memberName || 'Member',
+        email: row.memberEmail || '',
+        productId: row.productId,
+        productName: row.productName || 'Product',
+        status: row.status,
+        isCredit: product?.category === 'credit-card',
+      }
+    })
   }
   const members = await db.select().from(user)
   return members
     .filter((member) => getProduct(member.selectedProduct))
-    .map((member) => ({
-      id: 0,
-      userId: member.id,
-      name: member.name || 'Member',
-      email: member.email,
-      productId: member.selectedProduct || '',
-      productName: getProduct(member.selectedProduct)?.name || 'Product',
-      status: member.applicationStatus || 'pending',
-    }))
+    .map((member) => {
+      const product = getProduct(member.selectedProduct)
+      return {
+        id: 0,
+        userId: member.id,
+        name: member.name || 'Member',
+        email: member.email,
+        productId: member.selectedProduct || '',
+        productName: product?.name || 'Product',
+        status: member.applicationStatus || 'pending',
+        isCredit: product?.category === 'credit-card',
+      }
+    })
 }
 
 export async function reviewCardApplication(
   key: string,
-  decision: 'approved' | 'rejected'
+  decision: 'approved' | 'rejected',
+  opts?: { creditLimitDollars?: number | null }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireAdmin()
   await ensureUserProfileColumns()
   try {
     let userId = key
     let productId = ''
+    const limitCents = dollarsToLimitCents(opts?.creditLimitDollars)
     if (/^\d+$/.test(key) && Number(key) > 0) {
-      const reviewed = await reviewProductApplication(Number(key), decision)
+      const reviewed = await reviewProductApplication(Number(key), decision, {
+        creditLimitCents: limitCents,
+      })
       userId = reviewed.userId
       productId = reviewed.productId
     } else {
@@ -84,11 +105,15 @@ export async function reviewCardApplication(
       productId = member.selectedProduct || ''
       if (productId) {
         const submitted = await submitProductApplication(member.id, productId)
-        await reviewProductApplication(submitted.id, decision)
+        await reviewProductApplication(submitted.id, decision, {
+          creditLimitCents: limitCents,
+        })
       }
       userId = member.id
     }
-    const member = (await db.select().from(user).where(eq(user.id, userId)).limit(1))[0]
+    const member = (
+      await db.select().from(user).where(eq(user.id, userId)).limit(1)
+    )[0]
     await sendCardDecisionEmail({
       to: member?.email || '',
       name: member?.name,

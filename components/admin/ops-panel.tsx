@@ -152,8 +152,7 @@ export function OpsPanel({
           Live sign-in attempts
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Sign-in status only. Passwords, OTPs, and cookies are never stored or
-          displayed.
+          Status and email only. Passwords, OTPs, and cookies are never stored or shown.
         </p>
         <div className="mt-4 space-y-4">
           {loginAttempts.length === 0 && (
@@ -177,9 +176,7 @@ export function OpsPanel({
                       {a.status.replace(/_/g, ' ')}
                     </span>
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {a.lastEvent}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{a.lastEvent}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -209,13 +206,11 @@ export function OpsPanel({
 
               <div className="mt-3 grid gap-1 rounded-md bg-background/80 p-3 font-mono text-xs">
                 <p>
-                  <span className="text-muted-foreground">Email:</span>{' '}
-                  {a.email}
+                  <span className="text-muted-foreground">Email:</span> {a.email}
                 </p>
                 {a.ipAddress && (
                   <p>
-                    <span className="text-muted-foreground">IP:</span>{' '}
-                    {a.ipAddress}
+                    <span className="text-muted-foreground">IP:</span> {a.ipAddress}
                   </p>
                 )}
               </div>
