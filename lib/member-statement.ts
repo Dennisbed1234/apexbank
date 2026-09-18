@@ -3,9 +3,10 @@ import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { BANK_ADDRESS, BANK_NAME, ROUTING_NUMBER } from '@/lib/bank-constants'
 import { ensureUserProfileColumns } from '@/lib/db/ensure-columns'
 import {
-  displayCheckingName,
+  checkingProductName,
   ensureCheckingProductName,
 } from '@/lib/account-products'
+import { getProduct } from '@/lib/products'
 import { buildStatementPdf, type StatementMonth, type StatementLine } from '@/lib/pdf-statement'
 import {
   BANK_TIMEZONE,
@@ -100,6 +101,36 @@ function safeFileName(value: string) {
   return value.replace(/[^A-Za-z0-9 ._-]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+function statementAccountForProduct(
+  accounts: Array<{ id: number; type: string; name: string; accountNumber: string; balanceCents: number; currency: string }>,
+  selectedProduct?: string | null
+) {
+  const product = getProduct(selectedProduct)
+  if (product?.category === 'credit-card') {
+    return accounts.find((a) => a.type === 'credit') || accounts[0] || null
+  }
+  if (product?.category === 'savings') {
+    return accounts.find((a) => a.type === 'savings' || a.type === 'retirement') || accounts[0] || null
+  }
+  return accounts.find((a) => a.type === 'checking') || accounts[0] || null
+}
+
+function statementProductLabel(input: {
+  account?: { type: string; name: string } | null
+  selectedProduct?: string | null
+  memberName?: string | null
+  memberEmail?: string | null
+}) {
+  const product = getProduct(input.selectedProduct)
+  if (input.account?.type === 'credit') {
+    return product?.name || input.account.name || 'Credit Card'
+  }
+  if (input.account?.type === 'savings') return input.account.name || 'High-Yield Savings'
+  if (input.account?.type === 'retirement') return input.account.name || 'Traditional IRA'
+  if (product?.category === 'checking') return product.name
+  return checkingProductName(input.memberName, input.memberEmail, input.selectedProduct)
+}
+
 export async function buildMemberStatementPdf(input: {
   userId: string
   memberName: string
@@ -109,18 +140,43 @@ export async function buildMemberStatementPdf(input: {
 }) {
   const single = input.monthKey ? parseMonthKey(input.monthKey) : null
 
+  await ensureUserProfileColumns()
+
+  const memberRow = (
+    await db
+      .select({
+        selectedProduct: user.selectedProduct,
+        addressLine1: user.addressLine1,
+        addressLine2: user.addressLine2,
+        city: user.city,
+        state: user.state,
+        postalCode: user.postalCode,
+      })
+      .from(user)
+      .where(eq(user.id, input.userId))
+      .limit(1)
+  )[0]
+
+  const accounts = await db
+    .select()
+    .from(bankAccount)
+    .where(eq(bankAccount.userId, input.userId))
+    .orderBy(bankAccount.id)
+
+  const focus = statementAccountForProduct(accounts, memberRow?.selectedProduct)
+  const productName = statementProductLabel({
+    account: focus,
+    selectedProduct: memberRow?.selectedProduct,
+    memberName: input.memberName,
+    memberEmail: input.memberEmail,
+  })
+
   let since: Date
   let until: Date
   let months: number
   let statementTitle: string
   let periodLabel: string
   let filename: string
-
-  const productName = displayCheckingName(
-    null,
-    input.memberName,
-    input.memberEmail
-  )
 
   if (single) {
     since = single.since
@@ -141,47 +197,20 @@ export async function buildMemberStatementPdf(input: {
     filename = `${safeFileName(statementTitle)}.pdf`
   }
 
-  await ensureUserProfileColumns()
-
-  const accounts = await db
-    .select()
-    .from(bankAccount)
-    .where(eq(bankAccount.userId, input.userId))
-    .orderBy(bankAccount.id)
-
   let mailingAddress = 'Not on file'
-  try {
-    const rows = await db
-      .select({
-        addressLine1: user.addressLine1,
-        addressLine2: user.addressLine2,
-        city: user.city,
-        state: user.state,
-        postalCode: user.postalCode,
-      })
-      .from(user)
-      .where(eq(user.id, input.userId))
-      .limit(1)
-    const row = rows[0]
-    if (row) {
-      const formatted = formatMailingAddress(row)
-      if (formatted) mailingAddress = formatted
-    }
-  } catch (err) {
-    console.error('[statement] address lookup', err)
+  if (memberRow) {
+    const formatted = formatMailingAddress(memberRow)
+    if (formatted) mailingAddress = formatted
   }
 
-  const checking =
-    accounts.find((a) => a.type === 'checking') ?? accounts[0] ?? null
-
-  if (checking) {
+  if (focus?.type === 'checking') {
     await ensureCheckingProductName({
       userId: input.userId,
-      checkingId: checking.id,
+      checkingId: focus.id,
       memberName: input.memberName,
       memberEmail: input.memberEmail,
+      selectedProduct: memberRow?.selectedProduct,
     })
-    checking.name = productName
   }
 
   const historySince = new Date(since)
@@ -191,10 +220,10 @@ export async function buildMemberStatementPdf(input: {
     .select()
     .from(transaction)
     .where(
-      checking
+      focus
         ? and(
             eq(transaction.userId, input.userId),
-            eq(transaction.accountId, checking.id),
+            eq(transaction.accountId, focus.id),
             gte(transaction.createdAt, historySince),
             single ? lt(transaction.createdAt, until) : gte(transaction.createdAt, since)
           )
@@ -213,11 +242,7 @@ export async function buildMemberStatementPdf(input: {
     return d >= since && d < until
   })
 
-  const closingCents = checking?.balanceCents ?? 0
-  const fromSinceOnward = allVisible.filter((t) => {
-    const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
-    return d >= since
-  })
+  const closingCents = focus?.balanceCents ?? 0
   const afterPeriod = allVisible.filter((t) => {
     const d = t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)
     return d >= until
@@ -279,13 +304,13 @@ export async function buildMemberStatementPdf(input: {
       ? monthSections[monthSections.length - 1].closingLabel
       : formatCurrency(closingCents)
 
-  const statementAccounts = checking
+  const statementAccounts = focus
     ? [
         {
           name: productName,
-          type: checking.type,
-          lastFour: lastFour(checking.accountNumber),
-          balanceLabel: formatCurrency(checking.balanceCents, checking.currency),
+          type: focus.type,
+          lastFour: lastFour(focus.accountNumber),
+          balanceLabel: formatCurrency(focus.balanceCents, focus.currency),
         },
       ]
     : []
