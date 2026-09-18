@@ -14,7 +14,6 @@ import { SendExternal } from '@/components/dashboard/send-external'
 import { MobileDeposit } from '@/components/dashboard/mobile-deposit'
 import { ScheduledPayments } from '@/components/dashboard/scheduled-payments'
 import { TransactionsList } from '@/components/dashboard/transactions-list'
-import { MemberCreditCard } from '@/components/dashboard/member-credit-card'
 import { ApplicationPending } from '@/components/dashboard/application-pending'
 import { AddProducts } from '@/components/dashboard/add-products'
 import {
@@ -257,10 +256,9 @@ export default async function DashboardPage() {
     (a) => a.type === 'checking' || a.type === 'savings'
   )
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
-  const hasMultipleAccounts = accounts.length > 1
+  const hasCredit = creditAccounts.length > 0
   const ownedKinds = accounts.map((a) => a.type)
   const addOptions = productsMemberCanAdd(refreshedCtx, ownedKinds)
-  const kycStatus = profile.kyc?.status ?? null
 
   const creditMeta = new Map(
     creditAccounts.map((card) => {
@@ -305,7 +303,8 @@ export default async function DashboardPage() {
         name={session.user.name}
         email={session.user.email}
         showDebitCardLink={hasDepositAccount}
-        showPayCreditLink={creditAccounts.length > 0}
+        showCreditCardLink={hasCredit}
+        showPayCreditLink={hasCredit}
       />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -344,27 +343,6 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {creditAccounts.map((card) => {
-          const meta = creditMeta.get(card.id)
-          const issued = meta?.issued
-          if (!issued) return null
-          return (
-            <div key={card.id} className="mt-8">
-              <MemberCreditCard
-                memberName={session.user.name || 'Member'}
-                cardNumber={issued.formatted}
-                cardExp={issued.exp}
-                cardCvv={issued.cvv}
-                network={issued.network}
-                productName={meta?.product?.name || card.name}
-                kycStatus={kycStatus}
-                accountId={card.id}
-                showActivityLink={hasMultipleAccounts || creditAccounts.length >= 1}
-              />
-            </div>
-          )
-        })}
-
         <div className="mt-8">
           <ScheduledPayments payments={outbound} />
         </div>
@@ -372,7 +350,10 @@ export default async function DashboardPage() {
         <div className="mt-8">
           <p className="mb-3 text-sm font-semibold text-foreground">Account activity</p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Checking, savings, and other deposit accounts. Card purchases are under View card activity.
+            Checking, savings, and other deposit accounts.
+            {hasCredit
+              ? ' Open Credit card from the menu for your card, pay balance, and card activity.'
+              : ''}
           </p>
           <TransactionsList transactions={depositRows} />
         </div>

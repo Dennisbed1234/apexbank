@@ -3,7 +3,16 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CreditCard, FileText, LogOut, Mail, Settings, Shield, User, Wallet } from 'lucide-react'
+import {
+  CreditCard,
+  FileText,
+  LogOut,
+  Mail,
+  Settings,
+  Shield,
+  User,
+  Wallet,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { emailMyStatement } from '@/app/actions/email-statement'
@@ -30,12 +39,14 @@ export function DashboardHeader({
   name,
   email,
   showDebitCardLink = false,
+  showCreditCardLink = false,
   showPayCreditLink = false,
 }: {
   name: string
   email: string
   showDebitCardLink?: boolean
-  /** Show Pay credit balance in the account dropdown */
+  /** Credit card page — only for members with a credit product */
+  showCreditCardLink?: boolean
   showPayCreditLink?: boolean
 }) {
   const router = useRouter()
@@ -207,6 +218,16 @@ export function DashboardHeader({
                 >
                   <CreditCard className="size-4" />
                   Debit card
+                </Link>
+              )}
+              {showCreditCardLink && (
+                <Link
+                  href="/dashboard/credit-card"
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => setOpen(false)}
+                >
+                  <CreditCard className="size-4" />
+                  Credit card
                 </Link>
               )}
               {showPayCreditLink && (
