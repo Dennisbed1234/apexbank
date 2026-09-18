@@ -162,7 +162,6 @@ export default async function DashboardPage() {
     }
   }
 
-  // Strict isolation: only this member's rows
   const owned = await db
     .select()
     .from(bankAccount)
@@ -199,8 +198,6 @@ export default async function DashboardPage() {
     email: session.user.email,
   }).catch(() => undefined)
 
-  // Admin should not inherit another member's credit product. Only keep credit
-  // accounts that belong to this userId and were provisioned for them.
   for (const row of owned.filter((a) => a.type === 'credit')) {
     if (row.userId !== userId) continue
     const product = resolveCreditProduct(row.name, ctx.selectedProduct, [
@@ -238,12 +235,8 @@ export default async function DashboardPage() {
     })),
   ])
 
-  // Defense in depth: never surface another user's account
-  const ownAccounts = rawAccounts.filter((a) => (a as any).userId === userId || true)
-  // getAccounts already scopes by session userId; keep visible product filter
-  let accounts = visibleAccounts(ownAccounts, refreshedCtx)
+  let accounts = visibleAccounts(rawAccounts, refreshedCtx)
 
-  // Admin without an approved credit product should not see a credit tile from testing
   if (isAdmin) {
     const adminHasCreditProduct =
       getProduct(ctx.selectedProduct)?.category === 'credit-card' ||
@@ -254,9 +247,6 @@ export default async function DashboardPage() {
     }
   }
 
-  const creditAccountIds = new Set(
-    accounts.filter((a) => a.type === 'credit').map((a) => a.id)
-  )
   const depositAccountIds = new Set(
     accounts.filter((a) => a.type !== 'credit').map((a) => a.id)
   )
@@ -267,6 +257,7 @@ export default async function DashboardPage() {
     (a) => a.type === 'checking' || a.type === 'savings'
   )
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
+  const hasMultipleAccounts = accounts.length > 1
   const ownedKinds = accounts.map((a) => a.type)
   const addOptions = productsMemberCanAdd(refreshedCtx, ownedKinds)
   const kycStatus = profile.kyc?.status ?? null
@@ -285,8 +276,11 @@ export default async function DashboardPage() {
     })
   )
 
-  function mapTx(t: (typeof transactions)[number]) {
-    return {
+  const seen = new Set<string>()
+  const depositRows = transactions
+    .filter((t) => depositAccountIds.has(t.accountId))
+    .filter((t) => !isHiddenLedgerRow(t.description, t.amountCents))
+    .map((t) => ({
       id: t.id,
       accountId: t.accountId,
       amountCents: t.amountCents,
@@ -297,33 +291,13 @@ export default async function DashboardPage() {
       createdAt:
         t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
       accountName: accountNameById.get(t.accountId) ?? 'Account',
-    }
-  }
-
-  function dedupe(list: ReturnType<typeof mapTx>[]) {
-    const seen = new Set<string>()
-    return list.filter((t) => {
-      if (isHiddenLedgerRow(t.description, t.amountCents)) return false
+    }))
+    .filter((t) => {
       const key = activityKey(t.description, t.amountCents, t.createdAt)
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-  }
-
-  // Deposit / checking / savings activity only
-  const depositRows = dedupe(
-    transactions.filter((t) => depositAccountIds.has(t.accountId)).map(mapTx)
-  )
-
-  // Credit activity keyed by card account id
-  const creditRowsByAccount = new Map<number, ReturnType<typeof mapTx>[]>()
-  for (const card of creditAccounts) {
-    creditRowsByAccount.set(
-      card.id,
-      dedupe(transactions.filter((t) => t.accountId === card.id).map(mapTx))
-    )
-  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -383,7 +357,8 @@ export default async function DashboardPage() {
                 network={issued.network}
                 productName={meta?.product?.name || card.name}
                 kycStatus={kycStatus}
-                transactions={creditRowsByAccount.get(card.id) || []}
+                accountId={card.id}
+                showActivityLink={hasMultipleAccounts || creditAccounts.length >= 1}
               />
             </div>
           )
@@ -396,7 +371,7 @@ export default async function DashboardPage() {
         <div className="mt-8">
           <p className="mb-3 text-sm font-semibold text-foreground">Account activity</p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Checking, savings, and other deposit accounts. Card purchases appear under your credit card.
+            Checking, savings, and other deposit accounts. Card purchases are under View card activity.
           </p>
           <TransactionsList transactions={depositRows} />
         </div>
