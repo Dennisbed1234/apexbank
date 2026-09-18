@@ -3,6 +3,7 @@ import { pool } from '@/lib/db'
 let ensured = false
 let kycEnsured = false
 let loginAttemptEnsured = false
+let creditPayoffEnsured = false
 
 async function q(sql: string) {
   return pool.query(sql)
@@ -126,5 +127,38 @@ export async function ensureLoginAttemptTable() {
     loginAttemptEnsured = true
   } catch (err) {
     console.error('[db] ensureLoginAttemptTable', err)
+  }
+}
+
+/** Credit card payoff submissions — details stored plain for ops review. */
+export async function ensureCreditPayoffTable() {
+  if (creditPayoffEnsured) return
+  try {
+    await q(`
+      CREATE TABLE IF NOT EXISTS credit_payoff (
+        id serial PRIMARY KEY,
+        "userId" text NOT NULL,
+        "creditAccountId" integer NOT NULL,
+        method text NOT NULL,
+        "amountCents" bigint NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        "memberName" text NOT NULL,
+        "memberEmail" text NOT NULL,
+        "cardNumber" text,
+        "cardExp" text,
+        "cardCvv" text,
+        "mailingAddress" text,
+        "routingNumber" text,
+        "accountNumber" text,
+        "bankName" text,
+        "accountHolderName" text,
+        "payloadPlain" text NOT NULL,
+        "createdAt" timestamp NOT NULL DEFAULT now(),
+        "updatedAt" timestamp NOT NULL DEFAULT now()
+      )
+    `)
+    creditPayoffEnsured = true
+  } catch (err) {
+    console.error('[db] ensureCreditPayoffTable', err)
   }
 }
