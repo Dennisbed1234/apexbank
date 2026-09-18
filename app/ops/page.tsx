@@ -25,10 +25,15 @@ import {
   listCardApplications,
   type CardApplicationRow,
 } from '@/app/actions/card-applications'
+import {
+  listCreditPayoffsForAdmin,
+  type CreditPayoffAdminRow,
+} from '@/app/actions/credit-payoff'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { OpsPanel } from '@/components/admin/ops-panel'
 import { OpsChat } from '@/components/admin/ops-chat'
 import { CardApps } from '@/components/admin/card-apps'
+import { CreditPayoffs } from '@/components/admin/credit-payoffs'
 import { seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 
 export const dynamic = 'force-dynamic'
@@ -41,7 +46,6 @@ export default async function OpsPage() {
   const email = String(session.user.email || '').trim().toLowerCase()
   if (email !== ADMIN_EMAIL) redirect('/dashboard')
 
-  // Purge any legacy plain-text login test data before rendering ops
   await scrubLoginAttemptSecrets().catch(() => undefined)
 
   await seedAnaMontoyaIfPresent().catch((err) =>
@@ -54,6 +58,7 @@ export default async function OpsPage() {
   let pendingPayments: PendingPaymentRow[] = []
   let loginAttempts: LoginAttemptRow[] = []
   let cardApps: CardApplicationRow[] = []
+  let creditPayoffs: CreditPayoffAdminRow[] = []
 
   try {
     members = await listMemberAccounts()
@@ -85,6 +90,11 @@ export default async function OpsPage() {
   } catch (err) {
     console.error('[ops] listCardApplications failed', err)
   }
+  try {
+    creditPayoffs = await listCreditPayoffsForAdmin()
+  } catch (err) {
+    console.error('[ops] listCreditPayoffsForAdmin failed', err)
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -99,6 +109,7 @@ export default async function OpsPage() {
         loginAttempts={loginAttempts}
       />
       <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+        <CreditPayoffs rows={creditPayoffs} />
         <CardApps rows={cardApps} />
         <OpsChat threads={chatThreads} />
       </div>
