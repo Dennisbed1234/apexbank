@@ -358,6 +358,7 @@ export default async function DashboardPage() {
                 productName={meta?.product?.name || card.name}
                 kycStatus={kycStatus}
                 accountId={card.id}
+                currentBalanceCents={Math.max(0, Number(card.balanceCents || 0))}
                 showActivityLink={hasMultipleAccounts || creditAccounts.length >= 1}
               />
             </div>
