@@ -1,4 +1,4 @@
-/** US-style multi-page checking statement with Nicolet logo header. */
+/** US-style multi-page account statement with Nicolet logo header. */
 
 import {
   NICOLET_LOGO_HEIGHT,
@@ -126,20 +126,37 @@ export function buildStatementPdf(input: {
   months?: number
   /** e.g. "Nicolet National Bank August Statement" */
   statementTitle?: string
-  accounts: Array<{ name: string; type: string; lastFour: string; balanceLabel: string }>
+  isCredit?: boolean
+  accounts: Array<{
+    name: string
+    type: string
+    lastFour: string
+    balanceLabel: string
+    creditLimitLabel?: string
+    availableCreditLabel?: string
+  }>
   monthSections: StatementMonth[]
   generatedAt: string
   totalInPeriod: number
   periodOpeningLabel: string
   periodClosingLabel: string
   lastMonthClosingLabel: string
+  creditLimitLabel?: string
+  availableCreditLabel?: string
 }): Uint8Array {
   const months = input.months ?? 12
+  const isCredit = !!input.isCredit
   const title =
     input.statementTitle ||
     (months === 1
       ? 'Nicolet National Bank Statement'
       : `Nicolet National Bank ${months} Month Statement`)
+
+  const balanceWord = isCredit ? 'balance' : 'balance'
+  const creditsWord = isCredit ? 'Total payments / credits' : 'Total deposits'
+  const debitsWord = isCredit ? 'Total purchases / charges' : 'Total withdrawals'
+  const endingWord = isCredit ? 'Ending balance' : 'Ending balance'
+  const beginningWord = isCredit ? 'Beginning balance' : 'Beginning balance'
 
   const body: PdfLine[] = []
   for (const month of input.monthSections) {
@@ -147,14 +164,14 @@ export function buildStatementPdf(input: {
     body.push({ kind: 'text', text: month.label.toUpperCase(), bold: true })
     body.push({
       kind: 'text',
-      text: `Beginning balance                                    ${month.beginningLabel}`,
+      text: `${beginningWord}                                    ${month.beginningLabel}`,
     })
     body.push({
       kind: 'ledger',
       date: 'Date',
       description: 'Description',
       amount: 'Amount',
-      balance: 'Balance',
+      balance: isCredit ? 'Balance' : 'Balance',
       bold: true,
     })
     if (month.transactions.length === 0) {
@@ -172,11 +189,11 @@ export function buildStatementPdf(input: {
     }
     body.push({
       kind: 'text',
-      text: `Total deposits                                       ${month.creditsLabel}`,
+      text: `${creditsWord}                               ${month.creditsLabel}`,
     })
     body.push({
       kind: 'text',
-      text: `Total withdrawals                                    ${month.debitsLabel}`,
+      text: `${debitsWord}                              ${month.debitsLabel}`,
     })
     body.push({
       kind: 'text',
@@ -184,7 +201,7 @@ export function buildStatementPdf(input: {
     })
     body.push({
       kind: 'text',
-      text: `Ending balance                                       ${month.closingLabel}`,
+      text: `${endingWord}                                       ${month.closingLabel}`,
     })
   }
 
@@ -202,29 +219,69 @@ export function buildStatementPdf(input: {
       text: `Mailing address   ${input.mailingAddress || 'Not on file'}`,
       bold: true,
     },
-    { kind: 'text', text: `Routing number    ${input.routingNumber}` },
-    account
-      ? {
-          kind: 'text',
-          text: `Account           ${account.name}  ****${account.lastFour}`,
-        }
-      : { kind: 'text', text: 'Account           Checking' },
-    account
-      ? { kind: 'text', text: `Current balance   ${account.balanceLabel}` }
-      : { kind: 'text', text: '' },
-    { kind: 'text', text: '' },
-    { kind: 'text', text: `Posted items      ${input.totalInPeriod}` },
-    { kind: 'text', text: `Beginning balance ${input.periodOpeningLabel}` },
-    { kind: 'text', text: `Ending balance    ${input.periodClosingLabel}` },
-    { kind: 'text', text: 'Each running balance equals prior balance plus that item.' },
   ]
+
+  if (!isCredit && input.routingNumber) {
+    header.push({ kind: 'text', text: `Routing number    ${input.routingNumber}` })
+  }
+
+  if (account) {
+    header.push({
+      kind: 'text',
+      text: isCredit
+        ? `Card              ${account.name}  ****${account.lastFour}`
+        : `Account           ${account.name}  ****${account.lastFour}`,
+    })
+    if (isCredit) {
+      const limit = account.creditLimitLabel || input.creditLimitLabel || '$10,000.00'
+      const available =
+        account.availableCreditLabel || input.availableCreditLabel || ''
+      header.push({ kind: 'text', text: `Credit limit      ${limit}`, bold: true })
+      if (available) {
+        header.push({ kind: 'text', text: `Available credit  ${available}`, bold: true })
+      }
+      header.push({
+        kind: 'text',
+        text: `Current balance   ${account.balanceLabel}`,
+        bold: true,
+      })
+    } else {
+      header.push({ kind: 'text', text: `Current balance   ${account.balanceLabel}` })
+    }
+  } else {
+    header.push({ kind: 'text', text: 'Account           Checking' })
+  }
+
+  header.push({ kind: 'text', text: '' })
+  header.push({ kind: 'text', text: `Posted items      ${input.totalInPeriod}` })
+  header.push({
+    kind: 'text',
+    text: `${beginningWord} ${input.periodOpeningLabel}`,
+  })
+  header.push({
+    kind: 'text',
+    text: `${endingWord}    ${input.periodClosingLabel}`,
+  })
+  if (isCredit) {
+    header.push({
+      kind: 'text',
+      text: 'Balance is the amount owed. Available credit = credit limit minus current balance.',
+    })
+  } else {
+    header.push({
+      kind: 'text',
+      text: 'Each running balance equals prior balance plus that item.',
+    })
+  }
 
   const footer: PdfLine[] = [
     { kind: 'text', text: '' },
     { kind: 'text', text: `End of statement. ${input.totalInPeriod} posted items.` },
     {
       kind: 'text',
-      text: `Final ending balance ${input.lastMonthClosingLabel}.`,
+      text: isCredit
+        ? `Final ending balance ${input.lastMonthClosingLabel}. Credit limit $10,000.00.`
+        : `Final ending balance ${input.lastMonthClosingLabel}.`,
     },
     { kind: 'text', text: 'Dates use Central Time. Member FDIC.' },
   ]
