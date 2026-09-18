@@ -12,12 +12,14 @@ export async function sendCardDecisionEmail(input: {
     return sendMail(
       input.to,
       `${input.productName} approved · ${BANK_NAME}`,
-      `<p>${greeting}</p><p>Your ${input.productName} application has been approved. Sign in to your dashboard to view the card.</p>`
+      `<p>${greeting}</p><p>Your ${input.productName} application has been approved. Sign in to your dashboard to view the card.</p>`,
+      `${input.productName} approved`
     )
   }
   return sendMail(
     input.to,
     `${input.productName} decision · ${BANK_NAME}`,
-    `<p>${greeting}</p><p>We were unable to approve your ${input.productName} application at this time.</p>`
+    `<p>${greeting}</p><p>We were unable to approve your ${input.productName} application at this time.</p>`,
+    `${input.productName} decision`
   )
 }
