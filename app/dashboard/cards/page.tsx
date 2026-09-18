@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { getAccounts } from '@/app/actions/banking'
 import { getProfileSettings } from '@/app/actions/settings'
@@ -18,6 +20,7 @@ export default async function CardsPage() {
   const hasDeposit = accounts.some((a) => a.type === 'checking' || a.type === 'savings')
   if (!hasDeposit) redirect('/dashboard')
 
+  const hasCredit = accounts.some((a) => a.type === 'credit')
   const checking = accounts.find((a) => a.type === 'checking') ?? accounts[0]
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const debitVisa = issueVisaCard(session.user.id)
@@ -31,9 +34,23 @@ export default async function CardsPage() {
 
   return (
     <div className="min-h-svh bg-background">
-      <DashboardHeader name={session.user.name} email={session.user.email} />
+      <DashboardHeader
+        name={session.user.name}
+        email={session.user.email}
+        showDebitCardLink
+        showCreditCardLink={hasCredit}
+        showPayCreditLink={hasCredit}
+      />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div>
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Back to dashboard
+        </Link>
+
+        <div className="mt-4">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Debit card</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Linked to your checking account. Order a physical card after identity verification.
