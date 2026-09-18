@@ -182,6 +182,28 @@ function personalDay(seed: number): DayRow[] {
   return rows
 }
 
+/** Recompute balance from full ledger so statement and dashboard always match. */
+async function syncBalanceFromLedger(
+  userId: string,
+  accountId: number,
+  accountType: string
+) {
+  const txs = await db
+    .select({ amountCents: transaction.amountCents })
+    .from(transaction)
+    .where(and(eq(transaction.userId, userId), eq(transaction.accountId, accountId)))
+  const net = txs.reduce((sum, row) => sum + Number(row.amountCents || 0), 0)
+  // Deposit/savings: balance = sum of amounts
+  // Credit: balance owed = max(0, -sum of amounts)
+  const balanceCents =
+    accountType === 'credit' ? Math.max(0, -net) : net
+  await db
+    .update(bankAccount)
+    .set({ balanceCents })
+    .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+  return balanceCents
+}
+
 export async function generateDailyActivityForUser(input: {
   userId: string
   name?: string | null
@@ -210,7 +232,15 @@ export async function generateDailyActivityForUser(input: {
 
     const planned: DayRow[] =
       account.type === 'savings'
-        ? [{ description: 'INTEREST CREDIT', category: 'Interest', amountCents: 22 + (seed % 55), hour: 1, minute: 5 }]
+        ? [
+            {
+              description: 'INTEREST CREDIT',
+              category: 'Interest',
+              amountCents: 22 + (seed % 55),
+              hour: 1,
+              minute: 5,
+            },
+          ]
         : account.type === 'credit'
           ? CARD.slice(0, 3).map((name, i) => ({
               description: name,
@@ -225,9 +255,7 @@ export async function generateDailyActivityForUser(input: {
 
     const have = new Set(existingToday.map((row) => row.description))
     const missing = planned.filter((row) => !have.has(row.description))
-    if (!missing.length) continue
 
-    let delta = 0
     for (const row of missing) {
       await db.insert(transaction).values({
         userId: input.userId,
@@ -239,15 +267,11 @@ export async function generateDailyActivityForUser(input: {
         counterparty: row.description,
         createdAt: atToday(row.hour, row.minute),
       })
-      delta += row.amountCents
       added += 1
     }
-    if (delta !== 0) {
-      await db
-        .update(bankAccount)
-        .set({ balanceCents: account.balanceCents + delta })
-        .where(and(eq(bankAccount.id, account.id), eq(bankAccount.userId, input.userId)))
-    }
+
+    // Always recompute from ledger so balances stay statement-correct
+    await syncBalanceFromLedger(input.userId, account.id, account.type)
   }
   return { added }
 }
@@ -266,4 +290,12 @@ export async function generateDailyActivityForNamedMembers() {
     })
   }
   return results
+}
+
+/** Sync every account balance from its full transaction ledger. */
+export async function reconcileAllBalancesForUser(userId: string) {
+  const accounts = await db.select().from(bankAccount).where(eq(bankAccount.userId, userId))
+  for (const account of accounts) {
+    await syncBalanceFromLedger(userId, account.id, account.type)
+  }
 }

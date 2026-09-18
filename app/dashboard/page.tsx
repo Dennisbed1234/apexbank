@@ -48,7 +48,10 @@ import { productsMemberCanAdd } from '@/lib/member-products'
 import { isPendingCreditApplication } from '@/lib/application-status'
 import { getProduct } from '@/lib/products'
 import { provisionApprovedProduct } from '@/lib/product-applications'
-import { generateDailyActivityForUser } from '@/lib/daily-activity'
+import {
+  generateDailyActivityForUser,
+  reconcileAllBalancesForUser,
+} from '@/lib/daily-activity'
 import { activateApprovedMember } from '@/lib/approved-member'
 import {
   ensureCreditLimitColumn,
@@ -184,11 +187,14 @@ export default async function DashboardPage() {
     })
   }
   await processDueWires().catch(() => undefined)
+
+  // Post today's activity then recompute every balance from the full ledger
   await generateDailyActivityForUser({
     userId: session.user.id,
     name: session.user.name,
     email: session.user.email,
   }).catch(() => undefined)
+  await reconcileAllBalancesForUser(session.user.id).catch(() => undefined)
   await reconcileCreditAccounts({
     userId: session.user.id,
     name: session.user.name,
@@ -243,7 +249,8 @@ export default async function DashboardPage() {
   const checking = accounts.find((a) => a.type === 'checking') ?? accounts[0]
   const accountNumber = checking?.accountNumber || SHARED_CHECKING_NUMBER
   const debitVisa = issueVisaCard(session.user.id)
-  const addOptions = productsMemberCanAdd(refreshedCtx)
+  const ownedKinds = accounts.map((a) => a.type)
+  const addOptions = productsMemberCanAdd(refreshedCtx, ownedKinds)
   const kycStatus = profile.kyc?.status ?? null
 
   const creditMeta = new Map(
@@ -317,9 +324,11 @@ export default async function DashboardPage() {
           })}
         </div>
 
-        <div className="mt-8">
-          <AddProducts options={addOptions.map((o) => ({ id: o.id, name: o.name }))} />
-        </div>
+        {addOptions.length > 0 && (
+          <div className="mt-8">
+            <AddProducts options={addOptions.map((o) => ({ id: o.id, name: o.name }))} />
+          </div>
+        )}
 
         {creditAccounts.map((card) => {
           const meta = creditMeta.get(card.id)

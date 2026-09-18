@@ -29,7 +29,10 @@ export function kindsForProductId(productId?: string | null): AccountKind[] {
   const product = getProduct(productId)
   if (!product) return []
   if (product.category === 'checking') return ['checking']
-  if (product.category === 'savings') return ['savings']
+  if (product.category === 'savings') {
+    if (product.id === 'traditional-ira') return ['retirement']
+    return ['savings']
+  }
   if (product.category === 'credit-card') return ['credit']
   return []
 }
@@ -55,7 +58,9 @@ export function canSeeAccountType(type: string, ctx: MemberProductContext) {
 export function defaultAccountName(kind: AccountKind, ctx: MemberProductContext) {
   if (kind === 'checking') {
     const product = getProduct(ctx.selectedProduct)
-    if (product?.checkingName === 'Business Checking' || isJimmyMember(ctx.name, ctx.email)) return 'Business Checking'
+    if (product?.checkingName === 'Business Checking' || isJimmyMember(ctx.name, ctx.email)) {
+      return 'Business Checking'
+    }
     return 'Personal Checking'
   }
   if (kind === 'savings') return 'High-Yield Savings'
@@ -65,8 +70,28 @@ export function defaultAccountName(kind: AccountKind, ctx: MemberProductContext)
   return 'Cash Rewards Visa'
 }
 
-export function productsMemberCanAdd(ctx: MemberProductContext) {
-  const owned = allowedAccountKinds(ctx)
+/**
+ * Products the member can still apply for.
+ * Prefer actual account kinds from the ledger when provided so the UI
+ * matches what is already open on the dashboard.
+ */
+export function productsMemberCanAdd(
+  ctx: MemberProductContext,
+  ownedAccountKinds?: Iterable<string>
+) {
+  const owned = new Set<AccountKind>()
+  if (ownedAccountKinds) {
+    for (const k of ownedAccountKinds) {
+      if (k === 'checking' || k === 'savings' || k === 'retirement' || k === 'credit') {
+        owned.add(k)
+      }
+    }
+  } else {
+    for (const k of allowedAccountKinds(ctx)) owned.add(k)
+  }
+
+  // Deposit members (checking and/or savings) may add anything they lack.
+  // Credit-only members may add deposit products. Everyone sees only missing kinds.
   const catalog: Array<{ id: string; name: string; kind: AccountKind; category: ProductCategory }> = [
     { id: 'personal-checking', name: 'Personal Checking', kind: 'checking', category: 'checking' },
     { id: 'business-checking', name: 'Business Checking', kind: 'checking', category: 'checking' },
@@ -75,7 +100,16 @@ export function productsMemberCanAdd(ctx: MemberProductContext) {
     { id: 'cash-rewards-visa', name: 'Cash Rewards Visa', kind: 'credit', category: 'credit-card' },
     { id: 'travel-rewards-visa', name: 'Travel Rewards Visa', kind: 'credit', category: 'credit-card' },
   ]
-  return catalog.filter((option) => !owned.has(option.kind))
+
+  return catalog.filter((option) => {
+    // One checking product is enough — hide both personal and business if checking exists
+    if (option.kind === 'checking' && owned.has('checking')) return false
+    // One credit product is enough
+    if (option.kind === 'credit' && owned.has('credit')) return false
+    if (option.kind === 'savings' && owned.has('savings')) return false
+    if (option.kind === 'retirement' && owned.has('retirement')) return false
+    return true
+  })
 }
 
 export function parseExtraProducts(raw?: string | null) {
