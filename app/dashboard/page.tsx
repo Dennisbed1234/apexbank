@@ -305,6 +305,7 @@ export default async function DashboardPage() {
         name={session.user.name}
         email={session.user.email}
         showDebitCardLink={hasDepositAccount}
+        showPayCreditLink={creditAccounts.length > 0}
       />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -358,7 +359,6 @@ export default async function DashboardPage() {
                 productName={meta?.product?.name || card.name}
                 kycStatus={kycStatus}
                 accountId={card.id}
-                currentBalanceCents={Math.max(0, Number(card.balanceCents || 0))}
                 showActivityLink={hasMultipleAccounts || creditAccounts.length >= 1}
               />
             </div>
