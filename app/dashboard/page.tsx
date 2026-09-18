@@ -222,16 +222,10 @@ export default async function DashboardPage() {
     applicationStatus: 'approved' as const,
   }
 
-  const [rawAccounts, transactions, outbound, profile] = await Promise.all([
+  const [rawAccounts, transactions, outbound] = await Promise.all([
     getAccounts(),
     getTransactions(250),
     listOutboundPayments().catch(() => []),
-    getProfileSettings().catch(() => ({
-      name: session.user.name || 'Member',
-      email: session.user.email || '',
-      phone: '',
-      kyc: null as null,
-    })),
   ])
 
   let accounts = visibleAccounts(rawAccounts, refreshedCtx)
@@ -327,11 +321,14 @@ export default async function DashboardPage() {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {accounts.map((account) => {
             const meta = creditMeta.get(account.id)
+            const isCredit = account.type === 'credit'
             return (
               <AccountCard
                 key={account.id}
                 account={account}
                 cardLast4={meta?.issued.last4}
+                showCardPageLinks={isCredit}
+                showDebitPageLink={isCredit && hasDepositAccount}
               />
             )
           })}
@@ -352,7 +349,7 @@ export default async function DashboardPage() {
           <p className="mb-3 text-xs text-muted-foreground">
             Checking, savings, and other deposit accounts.
             {hasCredit
-              ? ' Open Credit card from the menu for your card, pay balance, and card activity.'
+              ? ' Use the buttons on your credit tile or the menu for card details and pay balance.'
               : ''}
           </p>
           <TransactionsList transactions={depositRows} />
