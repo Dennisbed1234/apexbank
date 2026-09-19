@@ -12,9 +12,36 @@ const PERSONAL = [
   'KROGER', 'TRADER JOE S', 'WHOLEFDS', 'UBER TRIP', 'LYFT',
 ]
 
+/** Broad US credit-card merchant catalog — groceries, dining, gas, retail, travel, subscriptions, etc. */
 const CARD = [
-  'AMAZON.COM', 'TARGET', 'UBER TRIP', 'DELTA AIR LINES', 'STARBUCKS',
-  'WHOLEFDS', 'APPLE.COM/BILL', 'NETFLIX.COM', 'SHELL OIL', 'CHICK-FIL-A',
+  // Groceries & warehouse
+  'WALMART SUPERCENTER', 'TARGET', 'COSTCO WHSE', 'PUBLIX SUPER MARKET',
+  'KROGER', 'ALDI', 'TRADER JOE S', 'WHOLEFDS', 'SAMS CLUB', 'SAFEWAY',
+  // Gas & convenience
+  'SHELL OIL', 'CHEVRON', 'EXXONMOBIL', 'BP', 'WAWA', 'CIRCLE K',
+  '7-ELEVEN', 'QUIKTRIP', 'RACETRAC', 'MARATHON PETRO',
+  // Dining & coffee
+  'STARBUCKS', 'DUNKIN', 'CHIPOTLE', 'CHICK-FIL-A', 'PANERA BREAD',
+  'MCDONALDS', 'WENDYS', 'SUBWAY', 'TACO BELL', 'DOMINOS PIZZA',
+  'OLIVE GARDEN', 'APPLEBEES', 'CHILIS GRILL', 'OUTBACK STEAK',
+  'PF CHANGS', 'THE CHEESECAKE FACTORY',
+  // Retail & online
+  'AMAZON.COM', 'AMAZON MARKETPLACE', 'WALMART.COM', 'TARGET.COM',
+  'BEST BUY', 'HOME DEPOT', 'LOWES', 'NORDSTROM', 'MACYS',
+  'TJ MAXX', 'ROSS STORES', 'OLD NAVY', 'GAP', 'H&M',
+  'ULTA BEAUTY', 'SEPHORA', 'BATH & BODY WORKS',
+  // Pharmacy & health
+  'CVS PHARMACY', 'WALGREENS', 'RITE AID', 'CVS.COM',
+  // Subscriptions & digital
+  'APPLE.COM/BILL', 'NETFLIX.COM', 'SPOTIFY USA', 'HULU',
+  'DISNEY PLUS', 'YOUTUBE PREMIUM', 'ADOBE', 'MICROSOFT',
+  // Travel & rides
+  'UBER TRIP', 'LYFT', 'DELTA AIR LINES', 'UNITED AIRLINES',
+  'AMERICAN AIRLINES', 'SOUTHWEST AIR', 'MARRIOTT HOTELS',
+  'HILTON HOTELS', 'AIRBNB', 'BOOKING.COM', 'EXPEDIA',
+  // Misc everyday
+  'DOLLAR GENERAL', 'DOLLAR TREE', 'FIVE BELOW', 'PETSMART',
+  'PETCO', 'STAPLES', 'OFFICE DEPOT', 'FEDEX OFFICE',
 ]
 
 type DayRow = {
@@ -182,6 +209,37 @@ function personalDay(seed: number): DayRow[] {
   return rows
 }
 
+/** 2–5 distinct credit-card charges from the full US merchant catalog each day */
+function creditCardDay(seed: number): DayRow[] {
+  const count = 2 + (hash(seed) % 4) // 2–5 charges
+  const used = new Set<number>()
+  const rows: DayRow[] = []
+  for (let i = 0; i < count; i++) {
+    let idx = (seed + i * 17 + hash(seed + i * 31)) % CARD.length
+    // avoid duplicates on the same day
+    let attempts = 0
+    while (used.has(idx) && attempts < CARD.length) {
+      idx = (idx + 1) % CARD.length
+      attempts++
+    }
+    used.add(idx)
+    const name = CARD[idx]
+    // slightly wider amount range for realism
+    const min = 400
+    const max = name.includes('AIR') || name.includes('HOTEL') || name.includes('MARRIOTT') || name.includes('HILTON') || name.includes('AIRBNB')
+      ? 18500
+      : 9800
+    rows.push({
+      description: name,
+      category: 'Shopping',
+      amountCents: -between(seed + i * 4, min, max),
+      hour: 9 + i,
+      minute: 5 + (hash(seed + i) % 50),
+    })
+  }
+  return rows
+}
+
 /** Recompute balance from full ledger so statement and dashboard always match. */
 async function syncBalanceFromLedger(
   userId: string,
@@ -242,13 +300,7 @@ export async function generateDailyActivityForUser(input: {
             },
           ]
         : account.type === 'credit'
-          ? CARD.slice(0, 3).map((name, i) => ({
-              description: name,
-              category: 'Shopping',
-              amountCents: -between(seed + i * 4, 1200, 9800),
-              hour: 11 + i,
-              minute: 20,
-            }))
+          ? creditCardDay(seed + account.id)
           : jimmy
             ? jimmyBusinessDay(seed + account.id, today.getDay())
             : personalDay(seed + account.id)
