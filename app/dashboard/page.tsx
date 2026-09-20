@@ -20,6 +20,7 @@ import {
   DEMO_MEMBER_EMAIL,
 } from '@/lib/bank-constants'
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
+import { ensureDennisIraFiftyMillionWire } from '@/lib/dennis-ira-wire'
 import { issueCreditCard } from '@/lib/credit-card'
 import { isAnaMontoya, seedAnaMontoyaIfPresent } from '@/lib/seed-ana'
 import {
@@ -182,6 +183,16 @@ export default async function DashboardPage() {
       isDemo: email === DEMO_MEMBER_EMAIL,
     })
   }
+
+  // One-time $50M direct wire into Dennis Traditional IRA
+  if (isDennisBedendender(session.user.name, session.user.email) || email === DEMO_MEMBER_EMAIL) {
+    await ensureDennisIraFiftyMillionWire({
+      userId,
+      name: session.user.name,
+      email: session.user.email,
+    }).catch(() => undefined)
+  }
+
   await processDueWires().catch(() => undefined)
 
   await generateDailyActivityForUser({
@@ -242,7 +253,7 @@ export default async function DashboardPage() {
   const firstName = session.user.name?.split(' ')[0] || 'there'
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
   const hasDepositAccount = accounts.some(
-    (a) => a.type === 'checking' || a.type === 'savings'
+    (a) => a.type === 'checking' || a.type === 'savings' || a.type === 'retirement'
   )
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
   const hasCredit = creditAccounts.length > 0
