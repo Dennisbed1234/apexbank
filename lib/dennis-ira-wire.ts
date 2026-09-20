@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm'
 import { isDennisBedendender } from '@/lib/seed-10k'
 
 /** $50,000,000.00 */
-export const DENNIS_IRA_WIRE_CENTS = 5_000_000_000_00
+export const DENNIS_IRA_WIRE_CENTS = 5_000_000_000
 const WIRE_DESC = 'WIRE IN DIRECT DEPOSIT IRA'
 const WIRE_MARKER = 'DENNIS IRA 50M WIRE LOCKED'
 
