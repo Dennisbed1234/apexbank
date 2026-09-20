@@ -7,6 +7,8 @@ import { TransactionsList } from '@/components/dashboard/transactions-list'
 import { isHiddenLedgerRow } from '@/lib/ledger-privacy'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +78,10 @@ export default async function CreditActivityPage({
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+          className={cn(
+            buttonVariants({ variant: 'default', size: 'default' }),
+            'gap-1.5 px-4 shadow-sm'
+          )}
         >
           <ArrowLeft className="size-4" />
           Back to dashboard
