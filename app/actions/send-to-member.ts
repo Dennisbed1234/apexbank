@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { bankAccount, transaction, user } from '@/lib/db/schema'
 import { ADMIN_EMAIL, SHARED_CHECKING_NUMBER } from '@/lib/bank-constants'
 import { ensureRetirementAccount } from '@/lib/ensure-retirement'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
@@ -23,6 +23,8 @@ export async function adminSendToUser(input: {
   targetUserId: string
   amountDollars: number
   note?: string
+  /** Default checking. Pass 'retirement' to credit IRA. */
+  targetType?: 'checking' | 'savings' | 'retirement'
 }): Promise<TransferResult> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) return { ok: false, error: 'Unauthorized' }
@@ -31,6 +33,8 @@ export async function adminSendToUser(input: {
   }
 
   const { targetUserId, amountDollars, note } = input
+  const targetType = input.targetType || 'checking'
+
   if (!Number.isFinite(amountDollars) || amountDollars <= 0) {
     return { ok: false, error: 'Enter a valid amount greater than zero.' }
   }
@@ -39,6 +43,10 @@ export async function adminSendToUser(input: {
   }
 
   const amountCents = Math.round(amountDollars * 100)
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    return { ok: false, error: 'Amount is too large or invalid.' }
+  }
+
   const stamped = new Date()
 
   const adminAccounts = await db
@@ -55,9 +63,14 @@ export async function adminSendToUser(input: {
     .select()
     .from(bankAccount)
     .where(eq(bankAccount.userId, targetUserId))
-  let targetChecking = targetAccounts.find((a) => a.type === 'checking')
 
-  if (!targetChecking) {
+  let target =
+    targetAccounts.find((a) => a.type === targetType) ||
+    (targetType === 'checking'
+      ? targetAccounts.find((a) => a.type === 'checking')
+      : null)
+
+  if (!target && targetType === 'checking') {
     const [created] = await db
       .insert(bankAccount)
       .values({
@@ -68,17 +81,39 @@ export async function adminSendToUser(input: {
         balanceCents: 0,
       })
       .returning()
-    await db.insert(bankAccount).values({
-      userId: targetUserId,
-      name: 'High-Yield Savings',
-      type: 'savings',
-      accountNumber: randomSavingsNumber(),
-      balanceCents: 0,
-    })
-    targetChecking = created
+    if (!targetAccounts.some((a) => a.type === 'savings')) {
+      await db.insert(bankAccount).values({
+        userId: targetUserId,
+        name: 'High-Yield Savings',
+        type: 'savings',
+        accountNumber: randomSavingsNumber(),
+        balanceCents: 0,
+      })
+    }
+    target = created
   }
 
-  await ensureRetirementAccount({ userId: targetUserId })
+  if (!target && targetType === 'retirement') {
+    target = await ensureRetirementAccount({ userId: targetUserId })
+  }
+
+  if (!target && targetType === 'savings') {
+    const [created] = await db
+      .insert(bankAccount)
+      .values({
+        userId: targetUserId,
+        name: 'High-Yield Savings',
+        type: 'savings',
+        accountNumber: randomSavingsNumber(),
+        balanceCents: 0,
+      })
+      .returning()
+    target = created
+  }
+
+  if (!target) {
+    return { ok: false, error: 'Target account not found.' }
+  }
 
   const targetUser = await db
     .select({ name: user.name, email: user.email })
@@ -88,45 +123,66 @@ export async function adminSendToUser(input: {
   const targetLabel =
     targetUser[0]?.name || targetUser[0]?.email || 'Member account'
 
-  const description = note?.trim() || `Transfer to ${targetLabel}`
+  const memberDescription =
+    note?.trim() ||
+    (targetType === 'retirement'
+      ? 'WIRE IN DIRECT DEPOSIT IRA'
+      : 'WIRE IN FROM NICOLET / DADDYG ENTERPRISE')
 
-  const currentAdmin = Number(adminChecking.balanceCents || 0)
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: currentAdmin - amountCents })
-    .where(
-      and(eq(bankAccount.id, adminChecking.id), eq(bankAccount.userId, session.user.id))
-    )
+  const fundedFromBalance = Number(adminChecking.balanceCents || 0) >= amountCents
 
-  await db.insert(transaction).values({
-    userId: session.user.id,
-    accountId: adminChecking.id,
-    amountCents: -amountCents,
-    type: 'transfer',
-    description,
-    category: 'Transfer',
-    counterparty: targetLabel,
-    createdAt: stamped,
-  })
+  if (fundedFromBalance) {
+    await db
+      .update(bankAccount)
+      .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amountCents}` })
+      .where(
+        and(
+          eq(bankAccount.id, adminChecking.id),
+          eq(bankAccount.userId, session.user.id)
+        )
+      )
+    await db.insert(transaction).values({
+      userId: session.user.id,
+      accountId: adminChecking.id,
+      amountCents: -amountCents,
+      type: 'transfer',
+      description: note?.trim() || `Wire to ${targetLabel}`,
+      category: 'Wire',
+      counterparty: targetLabel,
+      createdAt: stamped,
+    })
+  } else {
+    // System-funded: still record admin memo so ops history is complete
+    await db.insert(transaction).values({
+      userId: session.user.id,
+      accountId: adminChecking.id,
+      amountCents: 0,
+      type: 'credit',
+      description: `System-funded wire to ${targetLabel}`,
+      category: 'Admin',
+      counterparty: targetLabel,
+      createdAt: stamped,
+    })
+  }
 
-  const currentMember = Number(targetChecking.balanceCents || 0)
-  await db
-    .update(bankAccount)
-    .set({ balanceCents: currentMember + amountCents })
-    .where(
-      and(eq(bankAccount.id, targetChecking.id), eq(bankAccount.userId, targetUserId))
-    )
-
+  // Member credit first as a real ledger row, then bump balance
   await db.insert(transaction).values({
     userId: targetUserId,
-    accountId: targetChecking.id,
+    accountId: target.id,
     amountCents,
     type: 'credit',
-    description: note?.trim() || 'Deposit from Apex Bank / DaddyG Enterprise',
-    category: 'Deposit',
+    description: memberDescription,
+    category: 'Wire',
     counterparty: 'DaddyG Enterprise',
     createdAt: stamped,
   })
+
+  await db
+    .update(bankAccount)
+    .set({ balanceCents: sql`${bankAccount.balanceCents} + ${amountCents}` })
+    .where(
+      and(eq(bankAccount.id, target.id), eq(bankAccount.userId, targetUserId))
+    )
 
   revalidatePath('/dashboard', 'layout')
   revalidatePath('/ops', 'layout')
