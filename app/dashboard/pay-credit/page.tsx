@@ -6,6 +6,8 @@ import { auth } from '@/lib/auth'
 import { getAccounts } from '@/app/actions/banking'
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { PayCreditBalance } from '@/components/dashboard/pay-credit-balance'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +42,10 @@ export default async function PayCreditPage({
       <main className="mx-auto max-w-lg px-4 py-8 sm:px-6">
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+          className={cn(
+            buttonVariants({ variant: 'default', size: 'default' }),
+            'gap-1.5 px-4 shadow-sm'
+          )}
         >
           <ArrowLeft className="size-4" />
           Back to dashboard
